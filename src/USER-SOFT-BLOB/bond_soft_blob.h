@@ -1,0 +1,63 @@
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifdef BOND_CLASS
+
+BondStyle(soft_blob,BondSoftBlob)
+
+#else
+
+#ifndef LMP_BOND_SOFT_BLOB_H
+#define LMP_BOND_SOFT_BLOB_H
+
+#include <stdio.h>
+#include "bond.h"
+
+namespace LAMMPS_NS {
+
+class BondSoftBlob : public Bond {
+ public:
+  BondSoftBlob(class LAMMPS *);
+  virtual ~BondSoftBlob();
+  void init_style();
+  virtual void compute(int, int);
+  void settings(int, char **);
+  void coeff(int, char **);
+  double equilibrium_distance(int);
+  void write_restart(FILE *);
+  void read_restart(FILE *);
+  void write_restart_settings(FILE *);
+  void read_restart_settings(FILE *);
+  void write_data(FILE *);
+  double single(int, double, int, int, double &);
+
+ protected:
+  char id_temp_global[80];
+  double *blob_temperature;
+  double *k,*r0;
+
+  virtual void allocate();
+};
+
+}
+
+#endif
+#endif
+
+/* ERROR/WARNING messages:
+
+E: Incorrect args for bond coefficients
+
+Self-explanatory.  Check the input script or data file.
+
+*/
