@@ -116,7 +116,7 @@ void PairSoftBlob::compute(int eflag, int vflag)
           }
           case BLOB_COLLOID: {
             r = sqrt(rsq);
-            energy = kBT*hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-r0[itype][jtype]));
+            energy = kBT*hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-r0[itype][jtype]-0.5));
             fpair = factor_lj * wbb[itype][jtype] * energy / r;
             if (eflag) {
               evdwl = energy - kBT*offset[itype][jtype];
