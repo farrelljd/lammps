@@ -59,6 +59,9 @@ void BondSoftBlob::compute(int eflag, int vflag)
   int nbondlist = neighbor->nbondlist;
   int nlocal = atom->nlocal;
   int newton_bond = force->newton_bond;
+  double kBT;
+
+  kBT = force->boltz*(*blob_temperature);
 
   for (n = 0; n < nbondlist; n++) {
     i1 = bondlist[n][0];
@@ -76,10 +79,10 @@ void BondSoftBlob::compute(int eflag, int vflag)
 
     // force & energy
 
-    if (r > 0.0) fbond = -2.0*(*blob_temperature)*rk/r;
+    if (r > 0.0) fbond = -2.0*kBT*rk/r;
     else fbond = 0.0;
 
-    if (eflag) ebond = (*blob_temperature)*rk*dr;
+    if (eflag) ebond = kBT*rk*dr;
 
     // apply force to each of 2 atoms
 
@@ -249,7 +252,10 @@ double BondSoftBlob::single(int type, double rsq, int i, int j,
   double r = sqrt(rsq);
   double dr = r - r0[type];
   double rk = k[type] * dr;
+  double kBT;
+  
+  kBT = force->boltz*(*blob_temperature);
   fforce = 0;
-  if (r > 0.0) fforce = -2.0*(*blob_temperature)*rk/r;
-  return (*blob_temperature)*rk*dr;
+  if (r > 0.0) fforce = -2.0*kBT*rk/r;
+  return kBT*rk*dr;
 }

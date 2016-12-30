@@ -72,11 +72,13 @@ void PairSoftBlob::compute(int eflag, int vflag)
   double *special_lj = force->special_lj;
   int newton_pair = force->newton_pair;
   double energy;
+  double kBT;
 
   inum = list->inum;
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
+  kBT = force->boltz*(*blob_temperature);
 
   // loop over neighbors of my atoms
 
@@ -104,20 +106,20 @@ void PairSoftBlob::compute(int eflag, int vflag)
 
         switch (pair_type[itype][jtype]) {
           case BLOB_BLOB: {
-            energy = (*blob_temperature)*hbb[itype][jtype] * exp( -wbb[itype][jtype] * rsq );
+            energy = kBT*hbb[itype][jtype] * exp( -wbb[itype][jtype] * rsq );
             fpair = factor_lj * 2 * wbb[itype][jtype] * energy;
             if (eflag) {
-              evdwl = energy - (*blob_temperature)*offset[itype][jtype];
+              evdwl = energy - kBT*offset[itype][jtype];
               evdwl *= factor_lj;
             }
             break;
           }
           case BLOB_COLLOID: {
             r = sqrt(rsq);
-            energy = (*blob_temperature)*hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-r0[itype][jtype]));
+            energy = kBT*hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-r0[itype][jtype]));
             fpair = factor_lj * wbb[itype][jtype] * energy / r;
             if (eflag) {
-              evdwl = energy - (*blob_temperature)*offset[itype][jtype];
+              evdwl = energy - kBT*offset[itype][jtype];
               evdwl *= factor_lj;
             }
             break;
@@ -404,16 +406,19 @@ double PairSoftBlob::single(int i, int j, int itype, int jtype, double rsq,
                          double &fforce)
 {
   double energy;
+  double kBT;
+
+  kBT = force->boltz*(*blob_temperature);
 
   switch (pair_type[itype][jtype]) {
     case BLOB_BLOB: {
-      energy = (*blob_temperature)*hbb[itype][jtype]*exp(-wbb[itype][jtype]*rsq);
+      energy = kBT*hbb[itype][jtype]*exp(-wbb[itype][jtype]*rsq);
       fforce = 2*wbb[itype][jtype]*energy;
       break;
     }
     case BLOB_COLLOID: {
       double r = sqrt(rsq);
-      energy = (*blob_temperature)*hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-r0[itype][jtype]));
+      energy = kBT*hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-r0[itype][jtype]));
       fforce = factor_lj * wbb[itype][jtype] * energy / r;
       break;
     }
@@ -423,7 +428,7 @@ double PairSoftBlob::single(int i, int j, int itype, int jtype, double rsq,
       break;
     }
   }
-  return factor_lj * (energy - (*blob_temperature)*offset[itype][jtype]);
+  return factor_lj * (energy - kBT*offset[itype][jtype]);
 }
 
 /* ---------------------------------------------------------------------- */
