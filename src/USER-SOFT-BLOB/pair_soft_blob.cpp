@@ -358,7 +358,7 @@ void PairSoftBlob::read_restart(FILE *fp)
 void PairSoftBlob::write_restart_settings(FILE *fp)
 {
   fwrite(&cut_global,sizeof(double),1,fp);
-  fwrite(&id_temp_global,80*sizeof(char),1,fp);
+  fwrite(&id_temp_global,sizeof(id_temp_global)*sizeof(char),1,fp);
   fwrite(&offset_flag,sizeof(int),1,fp);
   fwrite(&mix_flag,sizeof(int),1,fp);
 }
@@ -371,12 +371,12 @@ void PairSoftBlob::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
     fread(&cut_global,sizeof(double),1,fp);
-    fread(&id_temp_global,80*sizeof(char),1,fp);
+    fread(&id_temp_global,sizeof(id_temp_global)*sizeof(char),1,fp);
     fread(&offset_flag,sizeof(int),1,fp);
     fread(&mix_flag,sizeof(int),1,fp);
   }
   MPI_Bcast(&cut_global,1,MPI_DOUBLE,0,world);
-  MPI_Bcast(&id_temp_global,80,MPI_CHAR,0,world);
+  MPI_Bcast(&id_temp_global,sizeof(id_temp_global),MPI_CHAR,0,world);
   MPI_Bcast(&offset_flag,1,MPI_INT,0,world);
   MPI_Bcast(&mix_flag,1,MPI_INT,0,world);
 }

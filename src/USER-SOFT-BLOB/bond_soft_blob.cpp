@@ -225,7 +225,7 @@ void BondSoftBlob::read_restart(FILE *fp)
 
 void BondSoftBlob::write_restart_settings(FILE *fp)
 {
-  fwrite(&id_temp_global,80*sizeof(char),1,fp);
+  fwrite(&id_temp_global,sizeof(id_temp_global)*sizeof(char),1,fp);
 }
 
 /* ----------------------------------------------------------------------
@@ -235,9 +235,9 @@ void BondSoftBlob::write_restart_settings(FILE *fp)
 void BondSoftBlob::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
-    fread(&id_temp_global,80*sizeof(char),1,fp);
+    fread(&id_temp_global,sizeof(id_temp_global)*sizeof(char),1,fp);
   }
-  MPI_Bcast(&id_temp_global,80,MPI_CHAR,0,world);
+  MPI_Bcast(&id_temp_global,sizeof(id_temp_global),MPI_CHAR,0,world);
 }
 
 /* ----------------------------------------------------------------------
