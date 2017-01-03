@@ -32,6 +32,10 @@ PairSoftBlob::PairSoftBlob(LAMMPS *lmp) : Pair(lmp)
 {
   writedata = 1;
   offset_flag = 1;
+  for (int index=0; index < sizeof(id_temp_global); ++index)
+  {
+    id_temp_global[index]=0;
+  }
 }
 
 /* ---------------------------------------------------------------------- */

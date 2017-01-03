@@ -28,7 +28,13 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-BondSoftBlob::BondSoftBlob(LAMMPS *lmp) : Bond(lmp) {}
+BondSoftBlob::BondSoftBlob(LAMMPS *lmp) : Bond(lmp)
+{
+  for (int index=0; index < sizeof(id_temp_global); ++index)
+  {
+    id_temp_global[index]=0;
+  }
+}
 
 /* ---------------------------------------------------------------------- */
 
@@ -253,7 +259,7 @@ double BondSoftBlob::single(int type, double rsq, int i, int j,
   double dr = r - r0[type];
   double rk = k[type] * dr;
   double kBT;
-  
+
   kBT = force->boltz*(*blob_temperature);
   fforce = 0;
   if (r > 0.0) fforce = -2.0*kBT*rk/r;
