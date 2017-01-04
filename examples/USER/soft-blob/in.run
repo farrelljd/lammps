@@ -1,0 +1,56 @@
+# 17 LJ particles
+
+units           lj
+dimension       3
+boundary        p p p
+atom_style      bond
+neighbor        3.5 multi
+
+read_data	./DATA.FILE
+
+include         ./PARM.FILE
+
+timestep        0.05
+run_style       verlet
+
+#velocity        all create 0.007 1298371 mom yes rot yes dist gaussian
+
+
+thermo_style    multi 
+thermo          1000
+
+dump            lammpstrj all atom 100 ./dump.soft_blob.heat.lammpstrj
+
+fix             temp1 polymer nvt temp 0.01 1.0 100.0
+fix             temprigid1 nanoparticle1 rigid/nvt single temp 0.01 1.0 5.0
+fix             temprigid2 nanoparticle2 rigid/nvt single temp 0.01 1.0 5.0
+run             100000
+unfix           temp1
+unfix           temprigid1
+unfix           temprigid2
+
+fix             temp1 polymer nvt temp 1.0 0.01 100.0
+fix             temprigid1 nanoparticle1 rigid/nvt single temp 1.0 0.01 5.0
+fix             temprigid2 nanoparticle2 rigid/nvt single temp 1.0 0.01 5.0
+run             100000
+unfix           temp1
+unfix           temprigid1
+unfix           temprigid2
+
+fix             temp1 polymer nvt temp 0.01 1.0 100.0
+fix             temprigid1 nanoparticle1 rigid/nvt single temp 0.01 1.0 5.0
+fix             temprigid2 nanoparticle2 rigid/nvt single temp 0.01 1.0 5.0
+run             100000
+unfix           temp1
+unfix           temprigid1
+unfix           temprigid2
+
+fix             temp1 polymer nvt temp 1.0 0.01 100.0
+fix             temprigid1 nanoparticle1 rigid/nvt single temp 1.0 0.01 5.0
+fix             temprigid2 nanoparticle2 rigid/nvt single temp 1.0 0.01 5.0
+run             100000
+unfix           temp1
+unfix           temprigid1
+unfix           temprigid2
+
+#write_restart   ./soft_blob.rest
