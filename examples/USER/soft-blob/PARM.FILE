@@ -3,8 +3,8 @@
 group polymer type 3
 group nanoparticle type 1 2
 
-group system1 id 1:168
-group system2 id 169:338
+group system1 molecule 1
+group system2 molecule 2
 
 group nanoparticle1 intersect system1 nanoparticle
 group nanoparticle2 intersect system2 nanoparticle
@@ -19,7 +19,7 @@ pair_modify     shift yes
 bond_style      soft_blob temp1
 
 mass  1  6.0
-mass  2  1.0
+mass  2  0.001
 mass  3  1.0
 
 #           I  J           type  hbb  wbb   r0 rcut
