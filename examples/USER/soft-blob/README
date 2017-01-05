@@ -1,0 +1,3 @@
+The examples herein require the MOLECULE, RIGID, and USER-SOFT-BLOB packages.
+The soft-blob pairstyle requires only USER-SOFT-BLOB; the soft-blob bondstyle
+additionally requires MOLECULE.
