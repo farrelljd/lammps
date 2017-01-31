@@ -35,6 +35,7 @@ class PairSoftBlob : public Pair {
   void settings(int, char **);
   void coeff(int, char **);
   void init_style();
+  void init_list(int, class NeighList *);
   double init_one(int, int);
   void write_restart(FILE *);
   void read_restart(FILE *);
@@ -44,6 +45,8 @@ class PairSoftBlob : public Pair {
   void write_data_all(FILE *);
   double single(int, int, int, int, double, double, double, double &);
   void *extract(const char *, int &);
+
+  class NeighList *listwall;
 
  protected:
   double cut_global;

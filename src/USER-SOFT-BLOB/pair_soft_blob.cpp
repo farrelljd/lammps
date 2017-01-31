@@ -183,10 +183,10 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
   double energy;
   double kBT;
 
-  inum = list->inum;
-  ilist = list->ilist;
-  numneigh = list->numneigh;
-  firstneigh = list->firstneigh;
+  inum = list->inum; /** change list to wall list **/
+  ilist = list->ilist; /** change list to wall list **/
+  numneigh = list->numneigh; /** change list to wall list **/
+  firstneigh = list->firstneigh; /** change list to wall list **/
   kBT = force->boltz*(*blob_temperature);
 
   // loop over neighbors of my atoms
@@ -347,7 +347,14 @@ void PairSoftBlob::coeff(int narg, char **arg)
 
 void PairSoftBlob::init_style()
 {
-  neighbor->request(this,instance_me);
+  int irequest;
+
+  irequest = neighbor->request(this,instance_me);
+  //neighbor->requests[irequest]->id = 0;
+  //neighbor->requests[irequest]->zwall = 0;
+  //irequest = neighbor->request(this,instance_me);
+  //neighbor->requests[irequest]->id = 1;
+  //neighbor->requests[irequest]->zwall = 1;
   /** this bit accesses the current target temperature of the thermostat
       blob_temperature points to the target                              **/
   int ifix = modify->find_fix(id_temp_global);
@@ -355,6 +362,18 @@ void PairSoftBlob::init_style()
   int dim;
   blob_temperature = (double *) temperature_fix->extract("t_target", dim);
 }
+
+/* ----------------------------------------------------------------------
+   neighbor callback to inform pair style of neighbor list to use
+   specific pair style can override this function
+------------------------------------------------------------------------- */
+
+void PairSoftBlob::init_list(int id, NeighList *ptr)
+{
+  if (id == 0) list = ptr;
+  else if (id == 1) listwall = ptr;
+}
+
 
 /* ----------------------------------------------------------------------
    init for one type pair i,j and corresponding j,i
