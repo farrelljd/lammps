@@ -60,6 +60,18 @@ PairSoftBlob::~PairSoftBlob()
 
 void PairSoftBlob::compute(int eflag, int vflag)
 {
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
+
+  PairSoftBlob::compute_particles(eflag, vflag);
+  PairSoftBlob::compute_walls(eflag, vflag);
+
+  if (vflag_fdotr) virial_fdotr_compute();
+}
+
+
+void PairSoftBlob::compute_particles(int eflag, int vflag)
+{
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
   double rsq,r,factor_lj;
@@ -110,32 +122,29 @@ void PairSoftBlob::compute(int eflag, int vflag)
 
         switch (pair_type[itype][jtype]) {
           case BLOB_BLOB: {
-            energy = kBT*hbb[itype][jtype] * exp( -wbb[itype][jtype] * rsq );
+            energy = hbb[itype][jtype] * exp( -wbb[itype][jtype] * rsq );
             fpair = factor_lj * 2 * wbb[itype][jtype] * energy;
-            if (eflag) {
-              evdwl = energy - kBT*offset[itype][jtype];
-              evdwl *= factor_lj;
-            }
             break;
           }
           case BLOB_COLLOID: {
             r = sqrt(rsq);
-            energy = kBT*hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-r0[itype][jtype]-0.5));
+            energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-0.50-r0[itype][jtype]));
             fpair = factor_lj * wbb[itype][jtype] * energy / r;
-            if (eflag) {
-              evdwl = energy - kBT*offset[itype][jtype];
-              evdwl *= factor_lj;
-            }
             break;
           }
-          default:
-          case BLOB_NONE: {
+          default: {
             fpair = 0.0;
             evdwl = 0.0;
             break;
           }
         }
 
+        if (eflag) {
+          evdwl = energy - offset[itype][jtype];
+          evdwl *= kBT*factor_lj;
+        }
+
+        fpair*=kBT;
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
@@ -153,6 +162,95 @@ void PairSoftBlob::compute(int eflag, int vflag)
 
   if (vflag_fdotr) virial_fdotr_compute();
 }
+
+void PairSoftBlob::compute_walls(int eflag, int vflag)
+{
+  int i,j,ii,jj,inum,jnum,itype,jtype;
+  double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
+  double rsq,r,factor_lj;
+  int *ilist,*jlist,*numneigh,**firstneigh;
+
+  evdwl = 0.0;
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
+
+  double **x = atom->x;
+  double **f = atom->f;
+  int *type = atom->type;
+  int nlocal = atom->nlocal;
+  double *special_lj = force->special_lj;
+  int newton_pair = force->newton_pair;
+  double energy;
+  double kBT;
+
+  inum = list->inum;
+  ilist = list->ilist;
+  numneigh = list->numneigh;
+  firstneigh = list->firstneigh;
+  kBT = force->boltz*(*blob_temperature);
+
+  // loop over neighbors of my atoms
+
+  for (ii = 0; ii < inum; ii++) {
+    i = ilist[ii];
+    xtmp = x[i][0];
+    ytmp = x[i][1];
+    ztmp = x[i][2];
+    itype = type[i];
+    jlist = firstneigh[i];
+    jnum = numneigh[i];
+
+    for (jj = 0; jj < jnum; jj++) {
+      j = jlist[jj];
+      j &= NEIGHMASK;
+      factor_lj = special_lj[sbmask(j)];
+
+      delx = xtmp - x[j][0];
+      dely = ytmp - x[j][1];
+      delz = ztmp - x[j][2];
+      rsq = delx*delx + dely*dely + delz*delz;
+      jtype = type[j];
+
+      if (rsq < cutsq[itype][jtype]) {
+
+        switch (pair_type[itype][jtype]) {
+          case BLOB_WALL: {
+            r = sqrt(rsq);
+            energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-0.50-r0[itype][jtype]));
+            fpair = factor_lj * wbb[itype][jtype] * energy / r;
+            break;
+          }
+          default: {
+            fpair = 0.0;
+            evdwl = 0.0;
+            break;
+          }
+        }
+
+        if (eflag) {
+          evdwl = energy - offset[itype][jtype];
+          evdwl *= kBT*factor_lj;
+        }
+
+        fpair*=kBT;
+        f[i][0] += delx*fpair;
+        f[i][1] += dely*fpair;
+        f[i][2] += delz*fpair;
+        if (newton_pair || j < nlocal) {
+          f[j][0] -= delx*fpair;
+          f[j][1] -= dely*fpair;
+          f[j][2] -= delz*fpair;
+        }
+
+        if (evflag) ev_tally(i,j,nlocal,newton_pair,
+                             evdwl,0.0,fpair,delx,dely,delz);
+      }
+    }
+  }
+
+  if (vflag_fdotr) virial_fdotr_compute();
+}
+
 
 /* ----------------------------------------------------------------------
    allocate all arrays
@@ -416,14 +514,14 @@ double PairSoftBlob::single(int i, int j, int itype, int jtype, double rsq,
 
   switch (pair_type[itype][jtype]) {
     case BLOB_BLOB: {
-      energy = kBT*hbb[itype][jtype]*exp(-wbb[itype][jtype]*rsq);
-      fforce = 2*wbb[itype][jtype]*energy;
+      energy = hbb[itype][jtype]*exp(-wbb[itype][jtype]*rsq);
+      fforce = factor_lj*2*kBT*wbb[itype][jtype]*energy;
       break;
     }
     case BLOB_COLLOID: {
       double r = sqrt(rsq);
-      energy = kBT*hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-r0[itype][jtype]));
-      fforce = factor_lj * wbb[itype][jtype] * energy / r;
+      energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-r0[itype][jtype]));
+      fforce = factor_lj*kBT*wbb[itype][jtype] * energy / r;
       break;
     }
     default:
@@ -432,7 +530,7 @@ double PairSoftBlob::single(int i, int j, int itype, int jtype, double rsq,
       break;
     }
   }
-  return factor_lj * (energy - kBT*offset[itype][jtype]);
+  return factor_lj * kBT * (energy - offset[itype][jtype]);
 }
 
 /* ---------------------------------------------------------------------- */

@@ -30,6 +30,8 @@ class PairSoftBlob : public Pair {
   virtual ~PairSoftBlob();
 
   virtual void compute(int, int);
+  void compute_particles(int, int);
+  void compute_walls(int, int);
   void settings(int, char **);
   void coeff(int, char **);
   void init_style();
@@ -53,7 +55,7 @@ class PairSoftBlob : public Pair {
   double **soft_blob1;
   double **offset;
 
-  enum {BLOB_NONE=-1, BLOB_BLOB=1, BLOB_COLLOID=2};
+  enum {BLOB_NONE=-1, BLOB_BLOB=1, BLOB_COLLOID=2, BLOB_WALL=3};
 
   void allocate();
 };
