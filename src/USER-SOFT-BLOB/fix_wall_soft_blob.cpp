@@ -28,7 +28,7 @@ FixWallSoftBlob::FixWallSoftBlob(LAMMPS *lmp, int narg, char **arg) :
 
 void FixWallSoftBlob::precompute(int m)
 {
-  offset[m] = 3.20 * exp(-4.17 * (cutoff[m] - 0.50));
+  offset[m] = epsilon[m] * exp(-sigma[m] * (cutoff[m] - 0.50));
 }
 
 /* ----------------------------------------------------------------------
@@ -63,8 +63,8 @@ void FixWallSoftBlob::wall_particle(int m, int which, double coord)
         onflag = 1;
         continue;
       }
-      energy = 3.20 * exp(-4.17 * (delta - 0.50));
-      fwall = side * 4.17 * energy;
+      energy = epsilon[m] * exp(-sigma[m] * (delta - 0.50));
+      fwall = side * epsilon[m] * energy;
       f[i][dim] -= fwall;
       ewall[0] += energy - offset[m];
       ewall[m+1] += fwall;
