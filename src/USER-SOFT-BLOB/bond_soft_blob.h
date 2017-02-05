@@ -29,6 +29,7 @@ class BondSoftBlob : public Bond {
  public:
   BondSoftBlob(class LAMMPS *);
   virtual ~BondSoftBlob();
+  virtual void get_displacement(int, int, int, double &, double &, double &);
   void init_style();
   virtual void compute(int, int);
   void settings(int, char **);
@@ -44,8 +45,10 @@ class BondSoftBlob : public Bond {
  protected:
   char id_temp_global[80];
   double *blob_temperature;
-  double *k,*r0;
+  double *k,*r0,**gp;
+  int *tf,*gpflag;
 
+  enum InteractionTypes {BLOB_BLOB=1,BLOB_WALL=2};
   virtual void allocate();
 };
 

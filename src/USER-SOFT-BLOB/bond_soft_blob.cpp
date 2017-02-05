@@ -44,6 +44,38 @@ BondSoftBlob::~BondSoftBlob()
     memory->destroy(setflag);
     memory->destroy(k);
     memory->destroy(r0);
+    memory->destroy(gp);
+    memory->destroy(tf);
+    memory->destroy(gpflag);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, double &dely, double &delz)
+{
+  double **x = atom->x;
+  tagint *tag = atom->tag;
+  double z1,z2;
+  z1 = x[i1][2];
+  z2 = x[i2][2];
+
+  switch (tf[type]) {
+    case BLOB_BLOB: {
+      delx = x[i1][0] - x[i2][0];
+      dely = x[i1][1] - x[i2][1];
+      delz = x[i1][2] - x[i2][2];
+      break;
+    }
+    /** for this to work, the blob must be earlier than the wall in the input coordinates **/
+    case BLOB_WALL: {
+      int i1_global = tag[i1];
+      int i2_global = tag[i2];
+      delx = x[i1][0] - gp[i1_global][0] - x[i2][0];
+      dely = x[i1][1] - gp[i1_global][1] - x[i2][1];
+      delz = x[i1][2] - gp[i1_global][2] - x[i2][2];
+      break;
+    }
   }
 }
 
@@ -74,9 +106,10 @@ void BondSoftBlob::compute(int eflag, int vflag)
     i2 = bondlist[n][1];
     type = bondlist[n][2];
 
-    delx = x[i1][0] - x[i2][0];
-    dely = x[i1][1] - x[i2][1];
-    delz = x[i1][2] - x[i2][2];
+    get_displacement(i1, i2, type, delx, dely, delz);
+    //delx = x[i1][0] - x[i2][0];
+    //dely = x[i1][1] - x[i2][1];
+    //delz = x[i1][2] - x[i2][2];
 
     rsq = delx*delx + dely*dely + delz*delz;
     r = sqrt(rsq);
@@ -117,9 +150,18 @@ void BondSoftBlob::allocate()
 
   memory->create(k,n+1,"bond:k");
   memory->create(r0,n+1,"bond:r0");
+  memory->create(gp,atom->natoms+1,4, "bond:gp");
+  memory->create(tf,n+1,"bond:r0");
+  memory->create(gpflag,n+1,"bond:r0");
 
   memory->create(setflag,n+1,"bond:setflag");
   for (int i = 1; i <= n; i++) setflag[i] = 0;
+  for (int i = 1; i <= n; i++) gpflag[i] = 0;
+  for (int i = 1; i <= atom->natoms; i++) {
+    gp[i][0] = 0.0;
+    gp[i][1] = 0.0;
+    gp[i][2] = 0.0;
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -144,17 +186,19 @@ void BondSoftBlob::settings(int narg, char **arg)
 
 void BondSoftBlob::coeff(int narg, char **arg)
 {
-  if (narg != 3) error->all(FLERR,"Incorrect args for bond coefficients");
+  if (narg != 4) error->all(FLERR,"Incorrect args for bond coefficients");
   if (!allocated) allocate();
 
   int ilo,ihi;
   force->bounds(FLERR,arg[0],atom->nbondtypes,ilo,ihi);
 
-  double k_one = force->numeric(FLERR,arg[1]);
-  double r0_one = force->numeric(FLERR,arg[2]);
+  int tf_one = force->numeric(FLERR,arg[1]);
+  double k_one = force->numeric(FLERR,arg[2]);
+  double r0_one = force->numeric(FLERR,arg[3]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
+    tf[i] = tf_one;
     k[i] = k_one;
     r0[i] = r0_one;
     setflag[i] = 1;
@@ -176,6 +220,35 @@ void BondSoftBlob::init_style()
   Fix *temperature_fix = modify->fix[ifix];
   int dim;
   blob_temperature = (double *) temperature_fix->extract("t_target", dim);
+
+  int nlocal = atom->nlocal;
+  int *num_bond = atom->num_bond;
+  tagint **bond_atom = atom->bond_atom;
+  int **bond_type = atom->bond_type;
+  tagint *tag = atom->tag;
+  int i2, i1_global;
+
+  for (int i1 = 0; i1 < nlocal; i1++)
+  {
+    i1_global = tag[i1];
+
+    for (int m = 0; m < num_bond[i1]; m++) {
+      i2 = atom->map(bond_atom[i1][m]);
+
+      if (tf[bond_type[i1][m]] == BLOB_WALL)
+      {
+        if (gpflag[i1_global]==0) {
+        /** set shifted graft point
+            must add this to restart routines!! **/
+        gp[i1_global][0] = atom->x[i1][0] - atom->x[i2][0];
+        gp[i1_global][1] = atom->x[i1][1] - atom->x[i2][1];
+        gp[i1_global][2] = 0.0;
+        gpflag[i1_global] = 1;
+        fprintf(screen, "hi %10.5f %10.5f %10.5f\n",gp[i1_global][0] + atom->x[i2][0],gp[i1_global][1] + atom->x[i2][1],gp[i1_global][2] + atom->x[i2][2]);
+        }
+      }
+    }
+  }
 }
 
 /* ----------------------------------------------------------------------
