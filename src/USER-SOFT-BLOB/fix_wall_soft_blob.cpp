@@ -64,7 +64,7 @@ void FixWallSoftBlob::wall_particle(int m, int which, double coord)
         continue;
       }
       energy = epsilon[m] * exp(-sigma[m] * (delta - 0.50));
-      fwall = side * epsilon[m] * energy;
+      fwall = side * sigma[m] * energy;
       f[i][dim] -= fwall;
       ewall[0] += energy - offset[m];
       ewall[m+1] += fwall;

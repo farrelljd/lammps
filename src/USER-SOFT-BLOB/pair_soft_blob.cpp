@@ -205,19 +205,19 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
       j &= NEIGHMASK;
       factor_lj = special_lj[sbmask(j)];
 
-      delx = xtmp - x[j][0];
-      dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
-      rsq = delx*delx + dely*dely + delz*delz;
-      jtype = type[j];
+        jtype = type[j];
 
       if (rsq < cutsq[itype][jtype]) {
 
         switch (pair_type[itype][jtype]) {
           case BLOB_WALL: {
+            if (pair_type[jtype][jtype]==BLOB_BLOB) {
+              delz *= -1;
+            }
             r = sqrt(rsq);
-            energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-0.50-r0[itype][jtype]));
-            fpair = factor_lj * wbb[itype][jtype] * energy / r;
+            energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(delz-0.50-r0[itype][jtype]));
+            fpair = factor_lj * wbb[itype][jtype] * energy;
             break;
           }
           default: {
@@ -233,12 +233,8 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
         }
 
         fpair*=kBT;
-        f[i][0] += delx*fpair;
-        f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
         if (newton_pair || j < nlocal) {
-          f[j][0] -= delx*fpair;
-          f[j][1] -= dely*fpair;
           f[j][2] -= delz*fpair;
         }
 
