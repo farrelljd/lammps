@@ -134,6 +134,7 @@ void PairSoftBlob::compute_particles(int eflag, int vflag)
           }
           default: {
             fpair = 0.0;
+            energy = 0.0;
             evdwl = 0.0;
             break;
           }
@@ -222,6 +223,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
           }
           default: {
             fpair = 0.0;
+            energy = 0.0;
             evdwl = 0.0;
             break;
           }

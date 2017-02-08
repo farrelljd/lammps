@@ -61,12 +61,6 @@ void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, doub
   z2 = x[i2][2];
 
   switch (tf[type]) {
-    case BLOB_BLOB: {
-      delx = x[i1][0] - x[i2][0];
-      dely = x[i1][1] - x[i2][1];
-      delz = x[i1][2] - x[i2][2];
-      break;
-    }
     /** for this to work, the blob must be earlier than the wall in the input coordinates **/
     case BLOB_WALL: {
       int i1_global = tag[i1];
@@ -74,6 +68,12 @@ void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, doub
       delx = x[i1][0] - gp[i1_global][0] - x[i2][0];
       dely = x[i1][1] - gp[i1_global][1] - x[i2][1];
       delz = x[i1][2] - gp[i1_global][2] - x[i2][2];
+      break;
+    }
+    default: {
+      delx = x[i1][0] - x[i2][0];
+      dely = x[i1][1] - x[i2][1];
+      delz = x[i1][2] - x[i2][2];
       break;
     }
   }
