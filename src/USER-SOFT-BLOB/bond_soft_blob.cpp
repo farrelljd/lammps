@@ -61,13 +61,36 @@ void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, doub
   z2 = x[i2][2];
 
   switch (tf[type]) {
-    /** for this to work, the blob must be earlier than the wall in the input coordinates **/
     case BLOB_WALL: {
-      int i1_global = tag[i1];
-      int i2_global = tag[i2];
-      delx = x[i1][0] - gp[i1_global][0] - x[i2][0];
-      dely = x[i1][1] - gp[i1_global][1] - x[i2][1];
-      delz = x[i1][2] - gp[i1_global][2] - x[i2][2];
+      int i1g = tag[i1];
+      int i2g = tag[i2];
+ 
+      delx = x[i1][0] - x[i2][0] - gp[i1g][i2g][0];
+      dely = x[i1][1] - x[i2][1] - gp[i1g][i2g][1];
+      delz = x[i1][2] - x[i2][2] - gp[i1g][i2g][2];
+      //fprintf(screen, "dx,dy,dz:\t%10.2f%10.2f%10.2f\n", delx,dely,delz);    
+      //fprintf(screen, "dx,dy,dz:\t%10.2f%10.2f%10.2f\n", x[i2][0],x[i2][1],x[i2][2]);
+
+      int *sametag = atom->sametag;
+      double dx, dy, dz, rsq, rsqmin;
+      rsqmin = delx*delx + dely*dely + delz*delz;
+      while (sametag[i1] >=0) {
+        i1 = sametag[i1];
+        dx = x[i1][0] - x[i2][0] - gp[i1g][i2g][0];
+        dy = x[i1][1] - x[i2][1] - gp[i1g][i2g][1];
+        dz = x[i1][2] - x[i2][2] - gp[i1g][i2g][2];
+        //fprintf(screen, "dx,dy,dz:\t%10.2f%10.2f%10.2f\n", dx,dy,dz);    
+        //fprintf(screen, "dx,dy,dz:\t%10.2f%10.2f%10.2f\n", x[i2][0],x[i2][1],x[i2][2]);
+        rsq = dx*dx + dy*dy + dz*dz;
+        if (rsq < rsqmin) {
+          rsqmin = rsq;
+          delx = dx;
+          dely = dy;
+          delz = dz;
+        }
+      }
+
+      //fprintf(screen, "distance:\t%10.5f%10.5f%10.5f\n", delx*delx, dely*dely, delz*delz); 
       break;
     }
     default: {
@@ -150,17 +173,24 @@ void BondSoftBlob::allocate()
 
   memory->create(k,n+1,"bond:k");
   memory->create(r0,n+1,"bond:r0");
-  memory->create(gp,atom->natoms+1,4, "bond:gp");
+  memory->create(gp,atom->natoms+1,atom->natoms+1,4, "bond:gp");
   memory->create(tf,n+1,"bond:r0");
-  memory->create(gpflag,n+1,"bond:r0");
-
+  memory->create(gpflag,atom->natoms+1,atom->natoms+1,"bond:gpflag");
   memory->create(setflag,n+1,"bond:setflag");
+
   for (int i = 1; i <= n; i++) setflag[i] = 0;
-  for (int i = 1; i <= n; i++) gpflag[i] = 0;
+//  for (int i = 1; i <= n; i++) gpflag[i] = 0;
   for (int i = 1; i <= atom->natoms; i++) {
-    gp[i][0] = 0.0;
-    gp[i][1] = 0.0;
-    gp[i][2] = 0.0;
+    for (int j = 1; j <= atom->natoms; j++) {
+      gp[i][j][0] = 0.0;
+      gp[i][j][1] = 0.0;
+      gp[i][j][2] = 0.0;
+      gp[j][i][0] = 0.0;
+      gp[j][i][1] = 0.0;
+      gp[j][i][2] = 0.0;
+      gpflag[i][j] = 0;
+      gpflag[j][i] = 0;
+    }
   }
 }
 
@@ -226,7 +256,7 @@ void BondSoftBlob::init_style()
   tagint **bond_atom = atom->bond_atom;
   int **bond_type = atom->bond_type;
   tagint *tag = atom->tag;
-  int i2, i1_global;
+  int i2, i1_global, i2_global;
 
   for (int i1 = 0; i1 < nlocal; i1++)
   {
@@ -234,17 +264,23 @@ void BondSoftBlob::init_style()
 
     for (int m = 0; m < num_bond[i1]; m++) {
       i2 = atom->map(bond_atom[i1][m]);
+      i2_global = tag[i2];
 
       if (tf[bond_type[i1][m]] == BLOB_WALL)
       {
-        if (gpflag[i1_global]==0) {
+        if (gpflag[i1_global][i2_global]==0) {
         /** set shifted graft point
             must add this to restart routines!! **/
-        gp[i1_global][0] = atom->x[i1][0] - atom->x[i2][0];
-        gp[i1_global][1] = atom->x[i1][1] - atom->x[i2][1];
-        gp[i1_global][2] = 0.0;
-        gpflag[i1_global] = 1;
-        fprintf(screen, "hi %10.5f %10.5f %10.5f\n",gp[i1_global][0] + atom->x[i2][0],gp[i1_global][1] + atom->x[i2][1],gp[i1_global][2] + atom->x[i2][2]);
+	    gp[i1_global][i2_global][0] = atom->x[i1][0] - atom->x[i2][0];
+            gp[i1_global][i2_global][1] = atom->x[i1][1] - atom->x[i2][1];
+            gp[i2_global][i1_global][0] = atom->x[i2][0] - atom->x[i1][0];
+            gp[i2_global][i1_global][1] = atom->x[i2][1] - atom->x[i1][1];
+            gpflag[i1_global][i2_global] = 1;
+            gpflag[i2_global][i1_global] = 1;
+            //fprintf(screen, "hi %10.5f %10.5f %10.5f\n",gp[i1_global][0] + atom->x[i2][0],gp[i1_global][1] + atom->x[i2][1],gp[i1_global][2] + atom->x[i2][2]);
+        }
+        else {
+            fprintf(screen, "ERROR\n");
         }
       }
     }
