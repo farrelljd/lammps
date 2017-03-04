@@ -389,7 +389,6 @@ void PairSoftBlob::init_style()
     if (pair_type[itype][itype] == WALL_WALL) {
       if (wall_index>=2) error->all(FLERR,"Illegal number of walls");
       walls[wall_index++] = tag[i];
-      fprintf(screen, "particle %d is a wall\n", walls[wall_index-1]);
     }
   }
 

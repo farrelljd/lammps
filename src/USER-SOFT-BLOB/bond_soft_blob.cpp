@@ -56,9 +56,11 @@ void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, doub
 {
   double **x = atom->x;
   tagint *tag = atom->tag;
-  double z1,z2;
+  double z1,z2,widthx,widthy;
   z1 = x[i1][2];
   z2 = x[i2][2];
+  widthx = domain->boxhi[0] - domain->boxlo[0];
+  widthy = domain->boxhi[1] - domain->boxlo[1];
 
   switch (tf[type]) {
     case BLOB_WALL: {
@@ -68,49 +70,17 @@ void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, doub
       delx = x[i1][0] - x[i2][0] - gp[i1g][i2g][0];
       dely = x[i1][1] - x[i2][1] - gp[i1g][i2g][1];
       delz = x[i1][2] - x[i2][2] - gp[i1g][i2g][2];
-      fprintf(screen, "initial dx,dy,dz:\t%10.2f%10.2f%10.2f\n", delx,dely,delz);
-      fprintf(screen, "initial dx,dy,dz:\t%10.2f%10.2f%10.2f\n", x[i2][0],x[i2][1],x[i2][2]);
 
-      int *sametag = atom->sametag;
-      double dx, dy, dz, rsq, rsqmin;
-      rsqmin = delx*delx + dely*dely + delz*delz;
-
-      /** I have no idea how this works **/
-      if (sametag[i2]<0) {
-        while (sametag[i1] >=0) {
-          i1 = sametag[i1];
-          dx = x[i1][0] - x[i2][0] - gp[i1g][i2g][0];
-          dy = x[i1][1] - x[i2][1] - gp[i1g][i2g][1];
-          dz = x[i1][2] - x[i2][2] - gp[i1g][i2g][2];
-          fprintf(screen, "dx,dy,dz:\t%10.2f%10.2f%10.2f\n", dx,dy,dz);
-          fprintf(screen, "dx,dy,dz:\t%10.2f%10.2f%10.2f\n", x[i2][0],x[i2][1],x[i2][2]);
-          rsq = dx*dx + dy*dy + dz*dz;
-          if (rsq < rsqmin) {
-            rsqmin = rsq;
-            delx = dx;
-            dely = dy;
-            delz = dz;
-          }
-        }
-      } else {
-        while (sametag[i2] >=0) {
-          i2 = sametag[i2];
-          dx = x[i1][0] - x[i2][0] - gp[i1g][i2g][0];
-          dy = x[i1][1] - x[i2][1] - gp[i1g][i2g][1];
-          dz = x[i1][2] - x[i2][2] - gp[i1g][i2g][2];
-          fprintf(screen, "dx,dy,dz:\t%10.2f%10.2f%10.2f\n", dx,dy,dz);
-          fprintf(screen, "dx,dy,dz:\t%10.2f%10.2f%10.2f\n", x[i2][0],x[i2][1],x[i2][2]);
-          rsq = dx*dx + dy*dy + dz*dz;
-          if (rsq < rsqmin) {
-            rsqmin = rsq;
-            delx = dx;
-            dely = dy;
-            delz = dz;
-          }
-        }
+      if (delx > 0 & abs(delx-widthx)<delx) {
+        delx -= widthx;
+      } else if (delx < 0 & delx+widthx<abs(delx)) {
+        delx += widthx;
       }
-
-      fprintf(screen, "distance:\t%10.5f%10.5f%10.5f\n", delx*delx, dely*dely, delz*delz);
+      if (dely > 0 & abs(dely-widthy)<dely) {
+        dely -= widthy;
+      } else if (dely < 0 & dely+widthy<abs(dely)) {
+        dely += widthy;
+      }
       break;
     }
     default: {
@@ -150,9 +120,6 @@ void BondSoftBlob::compute(int eflag, int vflag)
     type = bondlist[n][2];
 
     get_displacement(i1, i2, type, delx, dely, delz);
-    //delx = x[i1][0] - x[i2][0];
-    //dely = x[i1][1] - x[i2][1];
-    //delz = x[i1][2] - x[i2][2];
 
     rsq = delx*delx + dely*dely + delz*delz;
     r = sqrt(rsq);
