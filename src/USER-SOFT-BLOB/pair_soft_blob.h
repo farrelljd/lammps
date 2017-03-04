@@ -51,6 +51,8 @@ class PairSoftBlob : public Pair {
  protected:
   double cut_global;
   char id_temp_global[80];
+  int walls[2], lower_wall_index, upper_wall_index;
+  const int numwalls = 2;
   double *blob_temperature;
   double **cut;
   double **hbb,**wbb,**r0;
@@ -58,7 +60,7 @@ class PairSoftBlob : public Pair {
   double **soft_blob1;
   double **offset;
 
-  enum {BLOB_NONE=-1, BLOB_BLOB=1, BLOB_COLLOID=2, BLOB_WALL=3};
+  enum {BLOB_NONE=-1, BLOB_BLOB=1, BLOB_COLLOID=2, BLOB_WALL=3, WALL_WALL=4};
 
   void allocate();
 };

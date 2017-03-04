@@ -20,6 +20,7 @@
 #include "comm.h"
 #include "force.h"
 #include "neigh_list.h"
+#include "neigh_request.h"
 #include "memory.h"
 #include "error.h"
 #include "fix.h"
@@ -32,9 +33,15 @@ PairSoftBlob::PairSoftBlob(LAMMPS *lmp) : Pair(lmp)
 {
   writedata = 1;
   offset_flag = 1;
+  lower_wall_index = -1;
+  upper_wall_index = -1;
   for (int index=0; index < sizeof(id_temp_global); ++index)
   {
     id_temp_global[index]=0;
+  }
+  for (int i = 0; i <= numwalls; i++)
+  {
+    walls[i] = -1;
   }
 }
 
@@ -170,6 +177,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
   double rsq,r,factor_lj;
   int *ilist,*jlist,*numneigh,**firstneigh;
+  int reflect;
 
   evdwl = 0.0;
   if (eflag || vflag) ev_setup(eflag,vflag);
@@ -178,75 +186,79 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
   double **x = atom->x;
   double **f = atom->f;
   int *type = atom->type;
+  int iglobal;
   int nlocal = atom->nlocal;
   double *special_lj = force->special_lj;
   int newton_pair = force->newton_pair;
   double energy;
   double kBT;
+  tagint *tag = atom->tag;
 
-  inum = list->inum; /** change list to wall list **/
-  ilist = list->ilist; /** change list to wall list **/
-  numneigh = list->numneigh; /** change list to wall list **/
-  firstneigh = list->firstneigh; /** change list to wall list **/
   kBT = force->boltz*(*blob_temperature);
 
-  // loop over neighbors of my atoms
+  int onflag = 0;
 
-  for (ii = 0; ii < inum; ii++) {
-    i = ilist[ii];
+  for (int wall_index = 0; wall_index < numwalls; ++wall_index) {
+    iglobal = walls[wall_index];
+    if (iglobal == -1) break;
+    if (iglobal == lower_wall_index) {
+      reflect = -1;
+    } else if (iglobal == upper_wall_index) {
+      reflect = 1;
+    } else {
+      error->one(FLERR,"Wall particle is neither the lower nor uppermost particle");
+    }
+
+    i = atom->map(iglobal);
     xtmp = x[i][0];
     ytmp = x[i][1];
     ztmp = x[i][2];
     itype = type[i];
-    jlist = firstneigh[i];
-    jnum = numneigh[i];
 
-    for (jj = 0; jj < jnum; jj++) {
-      j = jlist[jj];
+    for (j = 0; j < nlocal; j++) {
       j &= NEIGHMASK;
       factor_lj = special_lj[sbmask(j)];
-
+      delx = xtmp - x[j][0];
+      dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
-        jtype = type[j];
+      jtype = type[j];
 
-      if (rsq < cutsq[itype][jtype]) {
+      if (reflect*delz >= sqrt(cutsq[itype][jtype])) continue;
 
-        switch (pair_type[itype][jtype]) {
-          case BLOB_WALL: {
-            if (pair_type[jtype][jtype]==BLOB_BLOB) {
-              delz *= -1;
-            }
-            r = sqrt(rsq);
-            energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(delz-0.50-r0[itype][jtype]));
-            fpair = factor_lj * wbb[itype][jtype] * energy;
-            break;
+      switch (pair_type[jtype][jtype]) {
+        case BLOB_BLOB: {
+          fpair = 0.0;
+          energy = 0.0;
+          if (reflect*delz < 0.0) onflag = 1;
+          energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(reflect * delz-0.50-r0[itype][jtype]));
+          fpair = reflect * factor_lj * wbb[itype][jtype] * energy;
+
+          if (eflag) {
+            evdwl = energy - offset[itype][jtype];
+            evdwl *= kBT*factor_lj;
           }
-          default: {
-            fpair = 0.0;
-            energy = 0.0;
-            evdwl = 0.0;
-            break;
+
+          fpair*=kBT;
+          if (i < nlocal) {
+            f[i][2] += fpair;
           }
-        }
+          if (newton_pair || j < nlocal) {
+            f[j][2] -= fpair;
+          }
 
-        if (eflag) {
-          evdwl = energy - offset[itype][jtype];
-          evdwl *= kBT*factor_lj;
+          if (evflag) ev_tally(i,j,nlocal,newton_pair,
+                               evdwl,0.0,fpair,delx,dely,delz);
+          if (vflag_fdotr) virial_fdotr_compute();
+          break;
         }
-
-        fpair*=kBT;
-        f[i][2] += delz*fpair;
-        if (newton_pair || j < nlocal) {
-          f[j][2] -= delz*fpair;
+        default: {
+          break;
         }
-
-        if (evflag) ev_tally(i,j,nlocal,newton_pair,
-                             evdwl,0.0,fpair,delx,dely,delz);
       }
     }
   }
 
-  if (vflag_fdotr) virial_fdotr_compute();
+  if (onflag) error->one(FLERR,"Particle on or inside fix wall surface");
 }
 
 
@@ -348,17 +360,40 @@ void PairSoftBlob::init_style()
   int irequest;
 
   irequest = neighbor->request(this,instance_me);
-  //neighbor->requests[irequest]->id = 0;
-  //neighbor->requests[irequest]->zwall = 0;
-  //irequest = neighbor->request(this,instance_me);
-  //neighbor->requests[irequest]->id = 1;
-  //neighbor->requests[irequest]->zwall = 1;
+  neighbor->requests[irequest]->id = 0;
   /** this bit accesses the current target temperature of the thermostat
       blob_temperature points to the target                              **/
   int ifix = modify->find_fix(id_temp_global);
   Fix *temperature_fix = modify->fix[ifix];
   int dim;
   blob_temperature = (double *) temperature_fix->extract("t_target", dim);
+
+  int wall_index = 0;
+  int nlocal = atom->nlocal;
+  int *type = atom->type;
+  tagint *tag = atom->tag;
+  double **x = atom->x;
+  double maxz{-1e10}, minz{1e10};
+
+  for (int i = 0; i < nlocal; i++) {
+    int itype = type[i];
+    if (x[i][2] > maxz) {
+      maxz = x[i][2];
+      upper_wall_index = tag[i];
+    }
+    if (x[i][2] < minz) {
+      minz = x[i][2];
+      lower_wall_index = tag[i];
+    }
+
+    if (pair_type[itype][itype] == WALL_WALL) {
+      if (wall_index>=2) error->all(FLERR,"Illegal number of walls");
+      walls[wall_index++] = tag[i];
+      fprintf(screen, "particle %d is a wall\n", walls[wall_index-1]);
+    }
+  }
+
+
 }
 
 /* ----------------------------------------------------------------------
@@ -368,8 +403,7 @@ void PairSoftBlob::init_style()
 
 void PairSoftBlob::init_list(int id, NeighList *ptr)
 {
-  if (id == 0) list = ptr;
-  else if (id == 1) listwall = ptr;
+  list = ptr;
 }
 
 
