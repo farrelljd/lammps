@@ -24,6 +24,7 @@
 #include "memory.h"
 #include "error.h"
 #include "fix.h"
+#include "math_const.h"
 
 using namespace LAMMPS_NS;
 
@@ -58,6 +59,9 @@ PairSoftBlob::~PairSoftBlob()
     memory->destroy(hbb);
     memory->destroy(wbb);
     memory->destroy(r0);
+    memory->destroy(r02);
+    memory->destroy(r06);
+    memory->destroy(r012);
     memory->destroy(soft_blob1);
     memory->destroy(offset);
   }
@@ -116,6 +120,9 @@ void PairSoftBlob::compute_particles(int eflag, int vflag)
 
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
+      jtype = type[j];
+      if ((pair_type[itype][jtype] != BLOB_BLOB) & (pair_type[itype][jtype] != BLOB_COLLOID)) continue;
+
       j &= NEIGHMASK;
       factor_lj = special_lj[sbmask(j)];
 
@@ -123,48 +130,40 @@ void PairSoftBlob::compute_particles(int eflag, int vflag)
       dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
       rsq = delx*delx + dely*dely + delz*delz;
-      jtype = type[j];
 
-      if (rsq < cutsq[itype][jtype]) {
+      if (rsq > cutsq[itype][jtype]) continue;
 
-        switch (pair_type[itype][jtype]) {
-          case BLOB_BLOB: {
-            energy = hbb[itype][jtype] * exp( -wbb[itype][jtype] * rsq );
-            fpair = factor_lj * 2 * wbb[itype][jtype] * energy;
-            break;
-          }
-          case BLOB_COLLOID: {
-            r = sqrt(rsq);
-            energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-0.50-r0[itype][jtype]));
-            fpair = factor_lj * wbb[itype][jtype] * energy / r;
-            break;
-          }
-          default: {
-            fpair = 0.0;
-            energy = 0.0;
-            evdwl = 0.0;
-            break;
-          }
+      switch (pair_type[itype][jtype]) {
+        case BLOB_BLOB: {
+          energy = hbb[itype][jtype] * exp( -wbb[itype][jtype] * rsq );
+          fpair = factor_lj * 2 * wbb[itype][jtype] * energy;
+          break;
         }
-
-        if (eflag) {
-          evdwl = energy - offset[itype][jtype];
-          evdwl *= kBT*factor_lj;
+        case BLOB_COLLOID: {
+          r = sqrt(rsq);
+          energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-0.50-r0[itype][jtype]));
+          fpair = factor_lj * wbb[itype][jtype] * energy / r;
+          break;
         }
-
-        fpair*=kBT;
-        f[i][0] += delx*fpair;
-        f[i][1] += dely*fpair;
-        f[i][2] += delz*fpair;
-        if (newton_pair || j < nlocal) {
-          f[j][0] -= delx*fpair;
-          f[j][1] -= dely*fpair;
-          f[j][2] -= delz*fpair;
-        }
-
-        if (evflag) ev_tally(i,j,nlocal,newton_pair,
-                             evdwl,0.0,fpair,delx,dely,delz);
       }
+
+      if (eflag) {
+        evdwl = energy - offset[itype][jtype];
+        evdwl *= kBT*factor_lj;
+      }
+
+      fpair*=kBT;
+      f[i][0] += delx*fpair;
+      f[i][1] += dely*fpair;
+      f[i][2] += delz*fpair;
+      if (newton_pair || j < nlocal) {
+        f[j][0] -= delx*fpair;
+        f[j][1] -= dely*fpair;
+        f[j][2] -= delz*fpair;
+      }
+
+      if (evflag) ev_tally(i,j,nlocal,newton_pair,
+                           evdwl,0.0,fpair,delx,dely,delz);
     }
   }
 
@@ -173,10 +172,9 @@ void PairSoftBlob::compute_particles(int eflag, int vflag)
 
 void PairSoftBlob::compute_walls(int eflag, int vflag)
 {
-  int i,j,ii,jj,inum,jnum,itype,jtype;
+  int i,j,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
-  double rsq,r,factor_lj;
-  int *ilist,*jlist,*numneigh,**firstneigh;
+  double factor_lj;
   int reflect;
 
   evdwl = 0.0;
@@ -192,7 +190,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
   int newton_pair = force->newton_pair;
   double energy;
   double kBT;
-  tagint *tag = atom->tag;
+  double eps, sigma, sigma2, sigma6, sigma12, delz2, delz4, delz10;
 
   kBT = force->boltz*(*blob_temperature);
 
@@ -216,20 +214,20 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
     itype = type[i];
 
     for (j = 0; j < nlocal; j++) {
+      jtype = type[j];
+      if ((pair_type[itype][jtype] != BLOB_WALL) & (pair_type[itype][jtype] != WALL_COLLOID)) continue;
+
       j &= NEIGHMASK;
       factor_lj = special_lj[sbmask(j)];
       delx = xtmp - x[j][0];
       dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
-      jtype = type[j];
 
       if (reflect*delz >= sqrt(cutsq[itype][jtype])) continue;
+      if (reflect*delz < 0.0) onflag = 1;
 
-      switch (pair_type[jtype][jtype]) {
-        case BLOB_BLOB: {
-          fpair = 0.0;
-          energy = 0.0;
-          if (reflect*delz < 0.0) onflag = 1;
+      switch (pair_type[itype][jtype]) {
+        case BLOB_WALL: {
           energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(reflect * delz-0.50-r0[itype][jtype]));
           fpair = reflect * factor_lj * wbb[itype][jtype] * energy;
 
@@ -237,24 +235,42 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
             evdwl = energy - offset[itype][jtype];
             evdwl *= kBT*factor_lj;
           }
-
           fpair*=kBT;
-          if (i < nlocal) {
-            f[i][2] += fpair;
-          }
-          if (newton_pair || j < nlocal) {
-            f[j][2] -= fpair;
-          }
 
-          if (evflag) ev_tally(i,j,nlocal,newton_pair,
-                               evdwl,0.0,fpair,delx,dely,delz);
-          if (vflag_fdotr) virial_fdotr_compute();
           break;
         }
-        default: {
+        case WALL_COLLOID: {
+          eps = hbb[itype][jtype];
+          sigma = r0[itype][jtype];
+          sigma2 = r02[itype][jtype];
+          sigma6 = r06[itype][jtype];
+          sigma12 = r012[itype][jtype];
+          delz2 = delz*delz;
+          delz4 = delz2*delz2;
+          delz10 = delz4*delz4*delz2;
+
+          energy = MathConst::MY_PI*eps*(sigma12/5.0/delz10 - sigma6/2.0/delz4 - delz2/4.0 + wall_colloid_fac*sigma2);
+          fpair = reflect * factor_lj * MathConst::MY_PI*eps*(2.0*sigma6/delz4/delz - 2.0*sigma12/delz10/delz -delz/2.0);
+
+          if (eflag) {
+            evdwl = energy - offset[itype][jtype];
+            evdwl *= factor_lj;
+          }
+
           break;
         }
       }
+
+      if (i < nlocal) {
+        f[i][2] += fpair;
+      }
+      if (newton_pair || j < nlocal) {
+        f[j][2] -= fpair;
+      }
+
+      if (evflag) ev_tally(i,j,nlocal,newton_pair,
+                           evdwl,0.0,fpair,delx,dely,delz);
+      if (vflag_fdotr) virial_fdotr_compute();
     }
   }
 
@@ -283,6 +299,9 @@ void PairSoftBlob::allocate()
   memory->create(hbb,n+1,n+1,"pair:hbb");
   memory->create(wbb,n+1,n+1,"pair:wbb");
   memory->create(r0,n+1,n+1,"pair:r0");
+  memory->create(r02,n+1,n+1,"pair:r02");
+  memory->create(r06,n+1,n+1,"pair:r06");
+  memory->create(r012,n+1,n+1,"pair:r012");
   memory->create(soft_blob1,n+1,n+1,"pair:soft_blob1");
   memory->create(offset,n+1,n+1,"pair:offset");
 }
@@ -342,6 +361,9 @@ void PairSoftBlob::coeff(int narg, char **arg)
       hbb[i][j] = hbb_one;
       wbb[i][j] = wbb_one;
       r0[i][j] = r0_one;
+      r02[i][j] = r0_one*r0_one;
+      r06[i][j] = r02[i][j]*r02[i][j]*r02[i][j];
+      r012[i][j] = r06[i][j]*r06[i][j];
       cut[i][j] = cut_one;
       setflag[i][j] = 1;
       count++;
@@ -422,12 +444,19 @@ double PairSoftBlob::init_one(int i, int j)
         offset[i][j] = hbb[i][j]*exp(-wbb[i][j]*cut[i][j]*cut[i][j]);
         break;
       }
-      case BLOB_COLLOID: {
-        offset[i][j] = hbb[i][j]*exp(-wbb[i][j]*(cut[i][j]-r0[i][j]));
+      case BLOB_COLLOID:
+      case BLOB_WALL: {
+        offset[i][j] = hbb[i][j]*exp(-wbb[i][j]*(cut[i][j]-0.50-r0[i][j]));
         break;
       }
-      default:
-      case BLOB_NONE: {
+      case WALL_COLLOID: {
+        double cut2 = cut[i][j]*cut[i][j];
+        double cut4 = cut2*cut2;
+        double cut10 = cut4*cut4*cut2;
+        offset[i][j] = MathConst::MY_PI*hbb[i][j]*(r012[i][j]/5.0/cut10 - r06[i][j]/2.0/cut4 - cut2/4.0 + wall_colloid_fac*r02[i][j]);
+        break;
+      }
+      default: {
         offset[i][j] = 0.0;
         break;
       }
@@ -438,6 +467,9 @@ double PairSoftBlob::init_one(int i, int j)
   hbb[j][i] = hbb[i][j];
   wbb[j][i] = wbb[i][j];
   r0[j][i] = r0[i][j];
+  r02[j][i] = r02[i][j];
+  r06[j][i] = r06[i][j];
+  r012[j][i] = r012[i][j];
   soft_blob1[j][i] = soft_blob1[i][j];
   offset[j][i] = offset[i][j];
 

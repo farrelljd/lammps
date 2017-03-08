@@ -21,6 +21,7 @@ PairStyle(soft_blob,PairSoftBlob)
 #define LMP_PAIR_SOFT_BLOB_H
 
 #include "pair.h"
+#include <math.h>
 
 namespace LAMMPS_NS {
 
@@ -56,11 +57,13 @@ class PairSoftBlob : public Pair {
   double *blob_temperature;
   double **cut;
   double **hbb,**wbb,**r0;
+  double **r02,**r06,**r012;
   int **pair_type;
   double **soft_blob1;
   double **offset;
+  const double wall_colloid_fac = 9.0*cbrt(2)/20.0;
 
-  enum {BLOB_NONE=-1, BLOB_BLOB=1, BLOB_COLLOID=2, BLOB_WALL=3, WALL_WALL=4};
+  enum {BLOB_NONE=-1, BLOB_BLOB=1, BLOB_COLLOID=2, BLOB_WALL=3, WALL_WALL=4, WALL_COLLOID=5};
 
   void allocate();
 };
