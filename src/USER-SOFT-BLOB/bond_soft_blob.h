@@ -41,12 +41,14 @@ class BondSoftBlob : public Bond {
   void read_restart_settings(FILE *);
   void write_data(FILE *);
   double single(int, double, int, int, double &);
+  virtual void get_grafting_points();
 
  protected:
   char id_temp_global[80];
   double *blob_temperature;
-  double *k,*r0,***gp;
-  int *tf,**gpflag;
+  double *k,*r0,***gp,***gp_local;
+  int *tf;
+  int gpset;
 
   enum InteractionTypes {BLOB_BLOB=1,BLOB_WALL=2};
   virtual void allocate();

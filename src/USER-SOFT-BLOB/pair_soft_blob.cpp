@@ -196,18 +196,23 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
 
   int onflag = 0;
 
-  for (int wall_index = 0; wall_index < numwalls; ++wall_index) {
-    iglobal = walls[wall_index];
-    if (iglobal == -1) break;
-    if (iglobal == lower_wall_index) {
-      reflect = -1;
-    } else if (iglobal == upper_wall_index) {
-      reflect = 1;
-    } else {
-      error->one(FLERR,"Wall particle is neither the lower nor uppermost particle");
-    }
+//  for (int wall_index = 0; wall_index < numwalls; ++wall_index) {
+//    iglobal = walls[wall_index];
+//    if (iglobal == -1) break;
+//    if (iglobal == lower_wall_index) {
+//      reflect = -1;
+//    } else if (iglobal == upper_wall_index) {
+//      reflect = 1;
+//    } else {
+//      error->one(FLERR,"Wall particle is neither the lower nor uppermost particle");
+//    }
 
+  reflect = 1;
+  for (int wall_index = 1; wall_index <= 2; ++wall_index) {
+    iglobal = wall_index;
+    reflect *= -1;
     i = atom->map(iglobal);
+    if (i==-1) continue;
     xtmp = x[i][0];
     ytmp = x[i][1];
     ztmp = x[i][2];
@@ -216,6 +221,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
     for (j = 0; j < nlocal; j++) {
       jtype = type[j];
       if ((pair_type[itype][jtype] != BLOB_WALL) & (pair_type[itype][jtype] != WALL_COLLOID)) continue;
+      if ((pair_type[itype][jtype] == WALL_WALL)) continue;
 
       j &= NEIGHMASK;
       factor_lj = special_lj[sbmask(j)];
@@ -250,7 +256,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
           delz10 = delz4*delz4*delz2;
 
           energy = MathConst::MY_PI*eps*(sigma12/5.0/delz10 - sigma6/2.0/delz4 - delz2/4.0 + wall_colloid_fac*sigma2);
-          fpair = reflect * factor_lj * MathConst::MY_PI*eps*(2.0*sigma6/delz4/delz - 2.0*sigma12/delz10/delz -delz/2.0);
+          fpair = -1.0* factor_lj * MathConst::MY_PI*eps*(2.0*sigma6/delz4/delz - 2.0*sigma12/delz10/delz -delz/2.0);
 
           if (eflag) {
             evdwl = energy - offset[itype][jtype];
@@ -261,9 +267,12 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
         }
       }
 
-      if (i < nlocal) {
-        f[i][2] += fpair;
-      }
+      //if (i > nlocal) { // look into this!!
+      //  fprintf(screen, "%d %d\n", i, nlocal);
+      //}
+
+      f[i][2] += fpair;
+
       if (newton_pair || j < nlocal) {
         f[j][2] -= fpair;
       }
@@ -279,7 +288,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
 
 
 /* ----------------------------------------------------------------------
-   allocate all arrays
+   all  ocate all arrays
 ------------------------------------------------------------------------- */
 
 void PairSoftBlob::allocate()

@@ -33,6 +33,7 @@ BondSoftBlob::BondSoftBlob(LAMMPS *lmp) : Bond(lmp)
   for (int index=0; index < sizeof(id_temp_global); ++index)
   {
     id_temp_global[index]=0;
+    gpset=0;
   }
 }
 
@@ -46,8 +47,56 @@ BondSoftBlob::~BondSoftBlob()
     memory->destroy(r0);
     memory->destroy(gp);
     memory->destroy(tf);
-    memory->destroy(gpflag);
   }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void BondSoftBlob::get_grafting_points()
+{
+  tagint *tag = atom->tag;
+  int i1, i2, i1_global, i2_global;
+  int **bondlist = neighbor->bondlist;
+  int nbondlist = neighbor->nbondlist;
+
+  memory->create(gp_local,atom->natoms+1,atom->natoms+1,4, "bond:gp_local");
+  for (int i = 1; i <= atom->natoms; i++) {
+    for (int j = 1; j <= atom->natoms; j++) {
+      gp_local[i][j][0] = 0.0;
+      gp_local[i][j][1] = 0.0;
+      gp_local[i][j][2] = 0.0;
+      gp_local[j][i][0] = 0.0;
+      gp_local[j][i][1] = 0.0;
+      gp_local[j][i][2] = 0.0;
+    }
+  }
+
+  for (int n = 0; n < nbondlist; n++) {
+    i1 = bondlist[n][0];
+    i2 = bondlist[n][1];
+    i1_global = tag[i1];
+    i2_global = tag[i2];
+    if (tf[bondlist[n][2]] == BLOB_WALL)
+    {
+      gp_local[i1_global][i2_global][0] = atom->x[i1][0] - atom->x[i2][0];
+      gp_local[i1_global][i2_global][1] = atom->x[i1][1] - atom->x[i2][1];
+      gp_local[i2_global][i1_global][0] = atom->x[i2][0] - atom->x[i1][0];
+      gp_local[i2_global][i1_global][1] = atom->x[i2][1] - atom->x[i1][1];
+    }
+  }
+
+  if (gpset!=1) {
+    for (int i1  = 0; i1 < atom->natoms; i1++) {
+      for (int j1 = 0; j1 < atom->natoms; j1++) {
+        for (int k1 = 0; k1 < 3; k1++) {
+          MPI_Allreduce(&gp_local[i1][j1][k1],&gp[i1][j1][k1],sizeof(gp_local[i1][j1][k1]),MPI_DOUBLE,MPI_SUM,world);
+        }
+      }
+    }
+  }
+
+  memory->destroy(gp_local);
+  gpset=1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -112,7 +161,9 @@ void BondSoftBlob::compute(int eflag, int vflag)
   int newton_bond = force->newton_bond;
   double kBT;
 
+  if (gpset==0) {get_grafting_points();}
   kBT = force->boltz*(*blob_temperature);
+  int me = comm->me;
 
   for (n = 0; n < nbondlist; n++) {
     i1 = bondlist[n][0];
@@ -149,6 +200,7 @@ void BondSoftBlob::compute(int eflag, int vflag)
 
     if (evflag) ev_tally(i1,i2,nlocal,newton_bond,ebond,fbond,delx,dely,delz);
   }
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -162,11 +214,9 @@ void BondSoftBlob::allocate()
   memory->create(r0,n+1,"bond:r0");
   memory->create(gp,atom->natoms+1,atom->natoms+1,4, "bond:gp");
   memory->create(tf,n+1,"bond:r0");
-  memory->create(gpflag,atom->natoms+1,atom->natoms+1,"bond:gpflag");
   memory->create(setflag,n+1,"bond:setflag");
 
   for (int i = 1; i <= n; i++) setflag[i] = 0;
-//  for (int i = 1; i <= n; i++) gpflag[i] = 0;
   for (int i = 1; i <= atom->natoms; i++) {
     for (int j = 1; j <= atom->natoms; j++) {
       gp[i][j][0] = 0.0;
@@ -175,8 +225,6 @@ void BondSoftBlob::allocate()
       gp[j][i][0] = 0.0;
       gp[j][i][1] = 0.0;
       gp[j][i][2] = 0.0;
-      gpflag[i][j] = 0;
-      gpflag[j][i] = 0;
     }
   }
 }
@@ -237,41 +285,6 @@ void BondSoftBlob::init_style()
   Fix *temperature_fix = modify->fix[ifix];
   int dim;
   blob_temperature = (double *) temperature_fix->extract("t_target", dim);
-
-  int nlocal = atom->nlocal;
-  int *num_bond = atom->num_bond;
-  tagint **bond_atom = atom->bond_atom;
-  int **bond_type = atom->bond_type;
-  tagint *tag = atom->tag;
-  int i2, i1_global, i2_global;
-
-  for (int i1 = 0; i1 < nlocal; i1++)
-  {
-    i1_global = tag[i1];
-
-    for (int m = 0; m < num_bond[i1]; m++) {
-      i2 = atom->map(bond_atom[i1][m]);
-      i2_global = tag[i2];
-
-      if (tf[bond_type[i1][m]] == BLOB_WALL)
-      {
-        if (gpflag[i1_global][i2_global]==0) {
-        /** set shifted graft point
-            must add this to restart routines!! **/
-	    gp[i1_global][i2_global][0] = atom->x[i1][0] - atom->x[i2][0];
-            gp[i1_global][i2_global][1] = atom->x[i1][1] - atom->x[i2][1];
-            gp[i2_global][i1_global][0] = atom->x[i2][0] - atom->x[i1][0];
-            gp[i2_global][i1_global][1] = atom->x[i2][1] - atom->x[i1][1];
-            gpflag[i1_global][i2_global] = 1;
-            gpflag[i2_global][i1_global] = 1;
-            //fprintf(screen, "hi %10.5f %10.5f %10.5f\n",gp[i1_global][0] + atom->x[i2][0],gp[i1_global][1] + atom->x[i2][1],gp[i1_global][2] + atom->x[i2][2]);
-        }
-        else {
-            fprintf(screen, "ERROR\n");
-        }
-      }
-    }
-  }
 }
 
 /* ----------------------------------------------------------------------
