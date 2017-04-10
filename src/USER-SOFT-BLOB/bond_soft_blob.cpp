@@ -163,7 +163,6 @@ void BondSoftBlob::compute(int eflag, int vflag)
 
   if (gpset==0) {get_grafting_points();}
   kBT = force->boltz*(*blob_temperature);
-  int me = comm->me;
 
   for (n = 0; n < nbondlist; n++) {
     i1 = bondlist[n][0];
@@ -304,8 +303,24 @@ void BondSoftBlob::write_restart(FILE *fp)
 {
   write_restart_settings(fp);
 
-  fwrite(&k[1],sizeof(double),atom->nbondtypes,fp);
-  fwrite(&r0[1],sizeof(double),atom->nbondtypes,fp);
+  for (int i = 1; i <= atom->nbondtypes; i++) {
+    fwrite(&setflag[i],sizeof(int),1,fp);
+    if (setflag[i]) {
+      fwrite(&k[i],sizeof(double),1,fp);
+      fwrite(&r0[i],sizeof(double),1,fp);
+      fwrite(&tf[i],sizeof(int),1,fp);
+    }
+  }
+
+  fwrite(&gpset,sizeof(int),1,fp);
+
+  for (int i = 1; i <= atom->natoms; i++) {
+    for (int j = 1; j <= atom->natoms; j++) {
+      fwrite(&gp[i][j][0],sizeof(double),3,fp);
+    }
+  }
+  //memory->create(gp,atom->natoms+1,atom->natoms+1,4, "bond:gp");
+
 }
 
 /* ----------------------------------------------------------------------
@@ -318,14 +333,30 @@ void BondSoftBlob::read_restart(FILE *fp)
 
   allocate();
 
-  if (comm->me == 0) {
-    fread(&k[1],sizeof(double),atom->nbondtypes,fp);
-    fread(&r0[1],sizeof(double),atom->nbondtypes,fp);
+  for (int i = 1; i <= atom->nbondtypes; i++) {
+    if (comm->me == 0) fread(&setflag[i],sizeof(int),1,fp);
+    MPI_Bcast(&setflag[i],1,MPI_INT,0,world);
+    if (setflag[i]) {
+      if (comm->me == 0) {
+        fread(&k[i],sizeof(double),1,fp);
+        fread(&r0[i],sizeof(double),1,fp);
+        fread(&tf[i],sizeof(int),1,fp);
+      }
+      MPI_Bcast(&k[i],1,MPI_DOUBLE,0,world);
+      MPI_Bcast(&r0[i],1,MPI_DOUBLE,0,world);
+      MPI_Bcast(&tf[i],1,MPI_INT,0,world);
+    }
   }
-  MPI_Bcast(&k[1],atom->nbondtypes,MPI_DOUBLE,0,world);
-  MPI_Bcast(&r0[1],atom->nbondtypes,MPI_DOUBLE,0,world);
 
-  for (int i = 1; i <= atom->nbondtypes; i++) setflag[i] = 1;
+  if (comm->me == 0) fread(&gpset,sizeof(int),1,fp);
+  MPI_Bcast(&gpset,1,MPI_INT,0,world);
+
+  for (int i = 1; i <= atom->natoms; i++) {
+    for (int j = 1; j <= atom->natoms; j++) {
+      if (comm->me == 0) fread(&gp[i][j][0],sizeof(double),3,fp);
+      MPI_Bcast(&gp[i][j],3,MPI_DOUBLE,0,world);
+    }
+  }
 }
 
 /* ----------------------------------------------------------------------
