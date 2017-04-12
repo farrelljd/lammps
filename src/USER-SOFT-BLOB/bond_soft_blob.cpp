@@ -354,7 +354,7 @@ void BondSoftBlob::read_restart(FILE *fp)
   for (int i = 1; i <= atom->natoms; i++) {
     for (int j = 1; j <= atom->natoms; j++) {
       if (comm->me == 0) fread(&gp[i][j][0],sizeof(double),3,fp);
-      MPI_Bcast(&gp[i][j],3,MPI_DOUBLE,0,world);
+      MPI_Bcast(gp[i][j],3,MPI_DOUBLE,0,world);
     }
   }
 }
