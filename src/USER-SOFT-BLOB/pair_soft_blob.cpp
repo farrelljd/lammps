@@ -87,11 +87,6 @@ void PairSoftBlob::compute_particles(int eflag, int vflag)
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
   double rsq,r,factor_lj;
   int *ilist,*jlist,*numneigh,**firstneigh;
-
-  evdwl = 0.0;
-  if (eflag || vflag) ev_setup(eflag,vflag);
-  else evflag = vflag_fdotr = 0;
-
   double **x = atom->x;
   double **f = atom->f;
   int *type = atom->type;
@@ -100,6 +95,9 @@ void PairSoftBlob::compute_particles(int eflag, int vflag)
   int newton_pair = force->newton_pair;
   double energy;
   double kBT;
+
+  double blob_blob_energy;
+  double blob_colloid_energy;
 
   inum = list->inum;
   ilist = list->ilist;
@@ -137,12 +135,20 @@ void PairSoftBlob::compute_particles(int eflag, int vflag)
         case BLOB_BLOB: {
           energy = hbb[itype][jtype] * exp( -wbb[itype][jtype] * rsq );
           fpair = factor_lj * 2 * wbb[itype][jtype] * energy;
+          blob_blob_energy += kBT*factor_lj*(energy - offset[itype][jtype]);
+//          fprintf(screen, "blob_blob_energy%5i%5i%20.10f\n", i,j,kBT*factor_lj*(energy - offset[itype][jtype]));
+//          fprintf(screen, "blob_blob__force%5i%5i%20.10f\n", i,j,fpair*kBT);
           break;
         }
         case BLOB_COLLOID: {
           r = sqrt(rsq);
           energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-0.50-r0[itype][jtype]));
           fpair = factor_lj * wbb[itype][jtype] * energy / r;
+          //r = sqrt(rsq) - r0[itype][jtype];
+          //energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(r-0.50));
+          //fpair = factor_lj * wbb[itype][jtype] * energy / r;
+//          fprintf(screen, "blob_colloid_energy%5i%5i%20.10f\n",i,j,kBT*factor_lj*(energy-offset[itype][jtype]));
+//          fprintf(screen, "blob_colloid__force%5i%5i%20.10f\n",i,j,fpair*kBT);
           break;
         }
       }
@@ -168,6 +174,7 @@ void PairSoftBlob::compute_particles(int eflag, int vflag)
   }
 
   if (vflag_fdotr) virial_fdotr_compute();
+
 }
 
 void PairSoftBlob::compute_walls(int eflag, int vflag)
@@ -176,11 +183,6 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
   double factor_lj;
   int reflect;
-
-  evdwl = 0.0;
-  if (eflag || vflag) ev_setup(eflag,vflag);
-  else evflag = vflag_fdotr = 0;
-
   double **x = atom->x;
   double **f = atom->f;
   int *type = atom->type;
@@ -195,24 +197,15 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
   kBT = force->boltz*(*blob_temperature);
 
   int onflag = 0;
-
-//  for (int wall_index = 0; wall_index < numwalls; ++wall_index) {
-//    iglobal = walls[wall_index];
-//    if (iglobal == -1) break;
-//    if (iglobal == lower_wall_index) {
-//      reflect = -1;
-//    } else if (iglobal == upper_wall_index) {
-//      reflect = 1;
-//    } else {
-//      error->one(FLERR,"Wall particle is neither the lower nor uppermost particle");
-//    }
+  double blob_wall_energy;
 
   reflect = 1;
-  for (int wall_index = 1; wall_index <= 2; ++wall_index) {
-    iglobal = wall_index;
+  for (int wall_index = 0; wall_index < 2; ++wall_index) {
     reflect *= -1;
+    iglobal = walls[wall_index];
+    if (iglobal==-1) continue; //no wall
     i = atom->map(iglobal);
-    if (i==-1) continue;
+    if (i==-1) continue; // wall not on this proc
     xtmp = x[i][0];
     ytmp = x[i][1];
     ztmp = x[i][2];
@@ -229,13 +222,16 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
       dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
 
-      if (reflect*delz >= sqrt(cutsq[itype][jtype])) continue;
       if (reflect*delz < 0.0) onflag = 1;
+      if (reflect*delz >= sqrt(cutsq[itype][jtype])) continue;
 
       switch (pair_type[itype][jtype]) {
         case BLOB_WALL: {
           energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(reflect * delz-0.50-r0[itype][jtype]));
           fpair = reflect * factor_lj * wbb[itype][jtype] * energy;
+          blob_wall_energy += kBT*factor_lj*(energy - offset[itype][jtype]);
+          //fprintf(screen, "blob_wall_energy%5i%5i%20.10f\n", i,j,kBT*factor_lj*(energy - offset[itype][jtype]));
+          //fprintf(screen, "blob_wall__force%5i%5i%20.10f\n", i,j,fpair*kBT);
 
           if (eflag) {
             evdwl = energy - offset[itype][jtype];
@@ -255,8 +251,10 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
           delz4 = delz2*delz2;
           delz10 = delz4*delz4*delz2;
 
-          energy = MathConst::MY_PI*eps*(sigma12/5.0/delz10 - sigma6/2.0/delz4 - delz2/4.0 + wall_colloid_fac*sigma2);
-          fpair = -1.0* factor_lj * MathConst::MY_PI*eps*(2.0*sigma6/delz4/delz - 2.0*sigma12/delz10/delz -delz/2.0);
+          energy = MathConst::MY_PI*4*eps*(sigma12/5.0/delz10 - sigma6/2.0/delz4 - delz2/4.0);// + wall_colloid_fac*sigma2);
+          fpair = -1.0* factor_lj * MathConst::MY_PI*4*eps*(2.0*sigma6/delz4/delz - 2.0*sigma12/delz10/delz -delz/2.0);
+          //fprintf(screen, "colloid_wall_energy%20.10f\n", MathConst::MY_PI*4*eps*(sigma12/5.0/delz10 - sigma6/2.0/delz4 - delz2/4.0)-offset[itype][jtype]);
+          //fprintf(screen, "colloid_wall__force%5i%5i%20.10f\n", i,j,fpair);
 
           if (eflag) {
             evdwl = energy - offset[itype][jtype];
@@ -288,7 +286,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
 
 
 /* ----------------------------------------------------------------------
-   all  ocate all arrays
+   allocate all arrays
 ------------------------------------------------------------------------- */
 
 void PairSoftBlob::allocate()
@@ -404,26 +402,25 @@ void PairSoftBlob::init_style()
   int *type = atom->type;
   tagint *tag = atom->tag;
   double **x = atom->x;
-  double maxz{-1e10}, minz{1e10};
+  double maxz{1e10}, minz{1e10};
+  int lower_wall_local{-1}, upper_wall_local{-1};
+  bool isupper, islower;
 
-  for (int i = 0; i < nlocal; i++) {
+  /** this bit determines the upper and lower walls **/
+  for (int i = 0; i < atom->nlocal; i++) {
     int itype = type[i];
-    if (x[i][2] > maxz) {
-      maxz = x[i][2];
-      upper_wall_index = tag[i];
-    }
-    if (x[i][2] < minz) {
-      minz = x[i][2];
-      lower_wall_index = tag[i];
-    }
-
-    if (pair_type[itype][itype] == WALL_WALL) {
-      if (wall_index>=2) error->all(FLERR,"Illegal number of walls");
-      walls[wall_index++] = tag[i];
+    if (pair_type[itype][itype]!=WALL_WALL) continue;
+    isupper = abs(x[i][2]-domain->boxhi[2]) < abs(x[i][2]-domain->boxlo[2]);
+    if (isupper) {
+      upper_wall_local = tag[i];
+    } else {
+      lower_wall_local = tag[i];
     }
   }
-
-
+  MPI_Allreduce(&lower_wall_local,&lower_wall_index,1,MPI_INT,MPI_MAX,world);
+  MPI_Allreduce(&upper_wall_local,&upper_wall_index,1,MPI_INT,MPI_MAX,world);
+  walls[0] = lower_wall_index;
+  walls[1] = upper_wall_index;
 }
 
 /* ----------------------------------------------------------------------
@@ -462,7 +459,7 @@ double PairSoftBlob::init_one(int i, int j)
         double cut2 = cut[i][j]*cut[i][j];
         double cut4 = cut2*cut2;
         double cut10 = cut4*cut4*cut2;
-        offset[i][j] = MathConst::MY_PI*hbb[i][j]*(r012[i][j]/5.0/cut10 - r06[i][j]/2.0/cut4 - cut2/4.0 + wall_colloid_fac*r02[i][j]);
+        offset[i][j] = MathConst::MY_PI*4*hbb[i][j]*(r012[i][j]/5.0/cut10 - r06[i][j]/2.0/cut4 - cut2/4.0);
         break;
       }
       default: {
@@ -523,6 +520,7 @@ void PairSoftBlob::read_restart(FILE *fp)
     for (j = i; j <= atom->ntypes; j++) {
       if (me == 0) fread(&setflag[i][j],sizeof(int),1,fp);
       MPI_Bcast(&setflag[i][j],1,MPI_INT,0,world);
+        fprintf(screen, "hello %d %d\n", i, j);
       if (setflag[i][j]) {
         if (me == 0) {
           fread(&pair_type[i][j],sizeof(int),1,fp);

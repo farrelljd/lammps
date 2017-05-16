@@ -30,7 +30,7 @@ using namespace LAMMPS_NS;
 
 BondSoftBlob::BondSoftBlob(LAMMPS *lmp) : Bond(lmp)
 {
-  for (int index=0; index < sizeof(id_temp_global); ++index)
+  for (unsigned int index=0; index < sizeof(id_temp_global); ++index)
   {
     id_temp_global[index]=0;
     gpset=0;
@@ -54,6 +54,7 @@ BondSoftBlob::~BondSoftBlob()
 
 void BondSoftBlob::get_grafting_points()
 {
+  /** this needs to be implemented like a neighbor list to avoid memory problems for large systems **/
   tagint *tag = atom->tag;
   int i1, i2, i1_global, i2_global;
   int **bondlist = neighbor->bondlist;
@@ -105,9 +106,7 @@ void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, doub
 {
   double **x = atom->x;
   tagint *tag = atom->tag;
-  double z1,z2,widthx,widthy;
-  z1 = x[i1][2];
-  z2 = x[i2][2];
+  double widthx,widthy;
   widthx = domain->boxhi[0] - domain->boxlo[0];
   widthy = domain->boxhi[1] - domain->boxlo[1];
 
@@ -120,14 +119,14 @@ void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, doub
       dely = x[i1][1] - x[i2][1] - gp[i1g][i2g][1];
       delz = x[i1][2] - x[i2][2] - gp[i1g][i2g][2];
 
-      if (delx > 0 & abs(delx-widthx)<delx) {
+      if ((delx > 0) & (abs(delx-widthx)<delx)) {
         delx -= widthx;
-      } else if (delx < 0 & delx+widthx<abs(delx)) {
+      } else if ((delx < 0) & (delx+widthx<abs(delx))) {
         delx += widthx;
       }
-      if (dely > 0 & abs(dely-widthy)<dely) {
+      if ((dely > 0) & (abs(dely-widthy)<dely)) {
         dely -= widthy;
-      } else if (dely < 0 & dely+widthy<abs(dely)) {
+      } else if ((dely < 0) & (dely+widthy<abs(dely))) {
         dely += widthy;
       }
       break;
@@ -138,7 +137,13 @@ void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, doub
       delz = x[i1][2] - x[i2][2];
       break;
     }
+    //if ((i2==569) & (i1==570)) {
+    //  fprintf(screen, "%5i%5i%20.10f\n", tag[i1],tag[i2],delx*delx+dely*dely+delz*delz);
+    //}
   }
+  //if ((tag[i1]==569) & (tag[i2]==570)) {
+  //  fprintf(screen, "%5i%5i%20.10f\n", tag[i1],tag[i2],delx*delx+dely*dely+delz*delz);
+  //}
 }
 
 /* ---------------------------------------------------------------------- */
@@ -153,7 +158,6 @@ void BondSoftBlob::compute(int eflag, int vflag)
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = 0;
 
-  double **x = atom->x;
   double **f = atom->f;
   int **bondlist = neighbor->bondlist;
   int nbondlist = neighbor->nbondlist;
@@ -182,6 +186,8 @@ void BondSoftBlob::compute(int eflag, int vflag)
     else fbond = 0.0;
 
     if (eflag) ebond = kBT*rk*dr;
+//    fprintf(screen, "bond_energy%5i%5i%20.10f\n", i1,i2,ebond);
+//    fprintf(screen, "bond__force%5i%5i%20.10f\n", i1,i2,fbond);
 
     // apply force to each of 2 atoms
 
