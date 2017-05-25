@@ -21,6 +21,8 @@ BondStyle(soft_blob,BondSoftBlob)
 #define LMP_BOND_SOFT_BLOB_H
 
 #include <stdio.h>
+#include <unordered_map>
+#include <vector>
 #include "bond.h"
 
 namespace LAMMPS_NS {
@@ -49,6 +51,11 @@ class BondSoftBlob : public Bond {
   double *k,*r0,***gp,***gp_local;
   int *tf;
   int gpset;
+  int gpx_index{-1};
+  int gpy_index{-1};
+  int gpz_index{-1};
+  double *gpx, *gpy, *gpz;
+  std::unordered_map<int, std::unordered_map<int, std::vector<double>>> gp_map;
 
   enum InteractionTypes {BLOB_BLOB=1,BLOB_WALL=2};
   virtual void allocate();

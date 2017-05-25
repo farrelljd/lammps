@@ -62,6 +62,8 @@ class PairSoftBlob : public Pair {
   double **soft_blob1;
   double **offset;
   const double wall_colloid_fac = 9.0*cbrt(2)/20.0;
+  int local_wall_interactions, global_wall_interactions;
+  double local_wall_energy, global_wall_energy;
 
   enum {BLOB_NONE=-1, BLOB_BLOB=1, BLOB_COLLOID=2, BLOB_WALL=3, WALL_WALL=4, WALL_COLLOID=5};
 

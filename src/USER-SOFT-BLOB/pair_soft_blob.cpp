@@ -74,8 +74,22 @@ void PairSoftBlob::compute(int eflag, int vflag)
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = vflag_fdotr = 0;
 
+  local_wall_interactions = 0;
+  global_wall_interactions = 0;
+  local_wall_energy = 0.0;
+  global_wall_energy = 0.0;
+
   PairSoftBlob::compute_particles(eflag, vflag);
   PairSoftBlob::compute_walls(eflag, vflag);
+
+  //fprintf(screen, "proc%5i:%10i\n", comm->me, local_wall_interactions);
+  //MPI_Allreduce(&local_wall_interactions, &global_wall_interactions, 1, MPI_INT, MPI_SUM, world);
+  //fprintf(screen, "proc%5i:%18.10f\n", comm->me, local_wall_energy);
+  //MPI_Allreduce(&local_wall_energy, &global_wall_energy, 1, MPI_DOUBLE, MPI_SUM, world);
+  //if (comm->me==0) {
+  //  fprintf(screen, "global wall interactions:%10i\n", global_wall_interactions);
+  //  fprintf(screen, "global wall energy:%18.10f\n", global_wall_energy);
+  //}
 
   if (vflag_fdotr) virial_fdotr_compute();
 }
@@ -216,6 +230,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
       if ((pair_type[itype][jtype] != BLOB_WALL) & (pair_type[itype][jtype] != WALL_COLLOID)) continue;
       if ((pair_type[itype][jtype] == WALL_WALL)) continue;
 
+      local_wall_interactions += 1;
       j &= NEIGHMASK;
       factor_lj = special_lj[sbmask(j)];
       delx = xtmp - x[j][0];
@@ -229,7 +244,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
         case BLOB_WALL: {
           energy = hbb[itype][jtype] * exp( -wbb[itype][jtype]*(reflect * delz-0.50-r0[itype][jtype]));
           fpair = reflect * factor_lj * wbb[itype][jtype] * energy;
-          blob_wall_energy += kBT*factor_lj*(energy - offset[itype][jtype]);
+          local_wall_energy += kBT*factor_lj*(energy - offset[itype][jtype]);
           //fprintf(screen, "blob_wall_energy%5i%5i%20.10f\n", i,j,kBT*factor_lj*(energy - offset[itype][jtype]));
           //fprintf(screen, "blob_wall__force%5i%5i%20.10f\n", i,j,fpair*kBT);
 
@@ -253,6 +268,7 @@ void PairSoftBlob::compute_walls(int eflag, int vflag)
 
           energy = MathConst::MY_PI*4*eps*(sigma12/5.0/delz10 - sigma6/2.0/delz4 - delz2/4.0);// + wall_colloid_fac*sigma2);
           fpair = -1.0* factor_lj * MathConst::MY_PI*4*eps*(2.0*sigma6/delz4/delz - 2.0*sigma12/delz10/delz -delz/2.0);
+          local_wall_energy += factor_lj*(energy - offset[itype][jtype]);
           //fprintf(screen, "colloid_wall_energy%20.10f\n", MathConst::MY_PI*4*eps*(sigma12/5.0/delz10 - sigma6/2.0/delz4 - delz2/4.0)-offset[itype][jtype]);
           //fprintf(screen, "colloid_wall__force%5i%5i%20.10f\n", i,j,fpair);
 
@@ -417,6 +433,7 @@ void PairSoftBlob::init_style()
       lower_wall_local = tag[i];
     }
   }
+
   MPI_Allreduce(&lower_wall_local,&lower_wall_index,1,MPI_INT,MPI_MAX,world);
   MPI_Allreduce(&upper_wall_local,&upper_wall_index,1,MPI_INT,MPI_MAX,world);
   walls[0] = lower_wall_index;
