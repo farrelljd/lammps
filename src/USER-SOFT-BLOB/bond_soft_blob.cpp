@@ -45,7 +45,6 @@ BondSoftBlob::~BondSoftBlob()
     memory->destroy(setflag);
     memory->destroy(k);
     memory->destroy(r0);
-//    memory->destroy(gp);
     memory->destroy(tf);
   }
 }
@@ -55,95 +54,20 @@ BondSoftBlob::~BondSoftBlob()
 void BondSoftBlob::get_grafting_points()
 {
   /** this needs to be implemented like a neighbor list to avoid memory problems for large systems **/
-  tagint *tag = atom->tag;
-  int i1, i2, i1_global, i2_global;
+  int i1, i2;
   int **bondlist = neighbor->bondlist;
   int nbondlist = neighbor->nbondlist;
-
-//  memory->create(gp_local,atom->natoms+1,atom->natoms+1,4, "bond:gp_local");
-//  for (int i = 1; i <= atom->natoms; i++) {
-//    for (int j = 1; j <= atom->natoms; j++) {
-//      gp_local[i][j][0] = 0.0;
-//      gp_local[i][j][1] = 0.0;
-//      gp_local[i][j][2] = 0.0;
-//      gp_local[j][i][0] = 0.0;
-//      gp_local[j][i][1] = 0.0;
-//      gp_local[j][i][2] = 0.0;
-//      gp_map[i][j][0] = 0.0;
-//      gp_map[i][j][1] = 0.0;
-//      gp_map[i][j][2] = 0.0;
-//      gp_map[j][i][0] = 0.0;
-//      gp_map[j][i][1] = 0.0;
-//      gp_map[j][i][2] = 0.0;
-//    }
-//  }
-
-  char name[4];
-  name[0]='g';
-  name[1]='p';
-  name[3]=0;
-  int flag{1};
-  int index{0};
-
-
-  name[2]='x';
-  gpx_index = atom->find_custom(name,flag);
-  if (gpx_index==-1) {
-    gpx_index = atom->add_custom(name,flag);
-  }
-  gpx = atom->dvector[gpx_index];
-
-  name[2]='y';
-  gpy_index = atom->find_custom(name,flag);
-  if (gpy_index==-1) {
-    gpy_index = atom->add_custom(name,flag);
-  }
-  gpy = atom->dvector[gpy_index];
-
-  name[2]='z';
-  gpz_index = atom->find_custom(name,flag);
-  if (gpz_index==-1) {
-    gpz_index = atom->add_custom(name,flag);
-  }
-  gpz = atom->dvector[gpz_index];
 
   for (int n = 0; n < nbondlist; n++) {
     i1 = bondlist[n][0];
     i2 = bondlist[n][1];
-    i1_global = tag[i1];
-    i2_global = tag[i2];
-
     if (tf[bondlist[n][2]] == BLOB_WALL)
     {
-//      gp_local[i1_global][i2_global][0] = atom->x[i1][0] - atom->x[i2][0];
-//      gp_local[i1_global][i2_global][1] = atom->x[i1][1] - atom->x[i2][1];
-//      gp_local[i2_global][i1_global][0] = atom->x[i2][0] - atom->x[i1][0];
-//      gp_local[i2_global][i1_global][1] = atom->x[i2][1] - atom->x[i1][1];
-      //gp_map[i1_global][i2_global] = {0.0,0.0,0.0};
-      //gp_map[i1_global][i2_global][0] = atom->x[i1][0] - atom->x[i2][0];
-      //gp_map[i1_global][i2_global][1] = atom->x[i1][1] - atom->x[i2][1];
-      //gp_map[i2_global][i1_global] = {0.0,0.0,0.0};
-      //gp_map[i2_global][i1_global][0] = atom->x[i2][0] - atom->x[i1][0];
-      //gp_map[i2_global][i1_global][1] = atom->x[i2][1] - atom->x[i1][1];
       gpx[i1] = atom->x[i1][0] - atom->x[i2][0];
       gpy[i1] = atom->x[i1][1] - atom->x[i2][1];
       gpz[i1] = 0.0;
-
-
     }
   }
-
-//  if (gpset!=1) {
-//    for (int i1  = 0; i1 < atom->natoms; i1++) {
-//      for (int j1 = 0; j1 < atom->natoms; j1++) {
-//        for (int k1 = 0; k1 < 3; k1++) {
-//          MPI_Allreduce(&gp_local[i1][j1][k1],&gp[i1][j1][k1],sizeof(gp_local[i1][j1][k1]),MPI_DOUBLE,MPI_SUM,world);
-//        }
-//      }
-//    }
-//  }
-
-//  memory->destroy(gp_local);
   gpset=1;
 }
 
@@ -152,27 +76,12 @@ void BondSoftBlob::get_grafting_points()
 void BondSoftBlob::get_displacement(int i1, int i2, int type, double &delx, double &dely, double &delz)
 {
   double **x = atom->x;
-  tagint *tag = atom->tag;
   double widthx,widthy;
   widthx = domain->boxhi[0] - domain->boxlo[0];
   widthy = domain->boxhi[1] - domain->boxlo[1];
-  int exists{0};
 
   switch (tf[type]) {
     case BLOB_WALL: {
-      int i1g = tag[i1];
-      int i2g = tag[i2];
-
-
-//      if (gp_map.count(i1g)>0) {
-//        if (gp_map[i1g].count(i2g)<1) {
-//          fprintf(screen,"missing!%8i%8i\n",i1g,i2g);
-//        }
-//      } else if (gp_map[i2g].count(i1g)>0) {
-//        fprintf(screen, "found?%8i\n", i1g);
-//      } else {
-//        fprintf(screen, "missing!%8i\n", i1g);
-//      }
 
       delx = x[i1][0] - x[i2][0] - gpx[i1];
       dely = x[i1][1] - x[i2][1] - gpy[i1];
@@ -218,6 +127,10 @@ void BondSoftBlob::compute(int eflag, int vflag)
   int newton_bond = force->newton_bond;
   double kBT;
 
+  gpx = atom->dvector[gpx_index];
+  gpy = atom->dvector[gpy_index];
+  gpz = atom->dvector[gpz_index];
+
   if (gpset==0) {get_grafting_points();}
   kBT = force->boltz*(*blob_temperature);
 
@@ -225,7 +138,6 @@ void BondSoftBlob::compute(int eflag, int vflag)
     i1 = bondlist[n][0];
     i2 = bondlist[n][1];
     type = bondlist[n][2];
-
     get_displacement(i1, i2, type, delx, dely, delz);
 
     rsq = delx*delx + dely*dely + delz*delz;
@@ -239,10 +151,6 @@ void BondSoftBlob::compute(int eflag, int vflag)
     else fbond = 0.0;
 
     if (eflag) ebond = kBT*rk*dr;
-//    fprintf(screen, "bond_energy%5i%5i%20.10f\n", i1,i2,ebond);
-//    fprintf(screen, "bond__force%5i%5i%20.10f\n", i1,i2,fbond);
-
-    // apply force to each of 2 atoms
 
     if (newton_bond || i1 < nlocal) {
       f[i1][0] += delx*fbond;
@@ -270,21 +178,10 @@ void BondSoftBlob::allocate()
 
   memory->create(k,n+1,"bond:k");
   memory->create(r0,n+1,"bond:r0");
-//  memory->create(gp,atom->natoms+1,atom->natoms+1,4, "bond:gp");
-  memory->create(tf,n+1,"bond:r0");
+  memory->create(tf,n+1,"bond:tf");
   memory->create(setflag,n+1,"bond:setflag");
 
   for (int i = 1; i <= n; i++) setflag[i] = 0;
-//  for (int i = 1; i <= atom->natoms; i++) {
-//    for (int j = 1; j <= atom->natoms; j++) {
-//      gp[i][j][0] = 0.0;
-//      gp[i][j][1] = 0.0;
-//      gp[i][j][2] = 0.0;
-//      gp[j][i][0] = 0.0;
-//      gp[j][i][1] = 0.0;
-//      gp[j][i][2] = 0.0;
-//    }
-//  }
 }
 
 /* ----------------------------------------------------------------------
@@ -343,6 +240,32 @@ void BondSoftBlob::init_style()
   Fix *temperature_fix = modify->fix[ifix];
   int dim;
   blob_temperature = (double *) temperature_fix->extract("t_target", dim);
+
+  char name[4];
+  name[0]='g';
+  name[1]='p';
+  name[3]=0;
+  int flag{1};
+
+  name[2]='x';
+  gpx_index = atom->find_custom(name,flag);
+  if (gpx_index==-1) {
+    gpx_index = atom->add_custom(name,flag);
+  }
+
+  name[2]='y';
+  gpy_index = atom->find_custom(name,flag);
+  if (gpy_index==-1) {
+    gpy_index = atom->add_custom(name,flag);
+  }
+
+  name[2]='z';
+  gpz_index = atom->find_custom(name,flag);
+  if (gpz_index==-1) {
+    gpz_index = atom->add_custom(name,flag);
+  }
+
+  fprintf(screen, "indices%5i%5i%5i\n", gpx_index, gpy_index, gpz_index);
 }
 
 /* ----------------------------------------------------------------------
@@ -372,14 +295,6 @@ void BondSoftBlob::write_restart(FILE *fp)
   }
 
   fwrite(&gpset,sizeof(int),1,fp);
-
-  for (int i = 1; i <= atom->natoms; i++) {
-    for (int j = 1; j <= atom->natoms; j++) {
-      fwrite(&gp[i][j][0],sizeof(double),3,fp);
-    }
-  }
-  //memory->create(gp,atom->natoms+1,atom->natoms+1,4, "bond:gp");
-
 }
 
 /* ----------------------------------------------------------------------
@@ -409,13 +324,6 @@ void BondSoftBlob::read_restart(FILE *fp)
 
   if (comm->me == 0) fread(&gpset,sizeof(int),1,fp);
   MPI_Bcast(&gpset,1,MPI_INT,0,world);
-
-  for (int i = 1; i <= atom->natoms; i++) {
-    for (int j = 1; j <= atom->natoms; j++) {
-      if (comm->me == 0) fread(&gp[i][j][0],sizeof(double),3,fp);
-      MPI_Bcast(gp[i][j],3,MPI_DOUBLE,0,world);
-    }
-  }
 }
 
 /* ----------------------------------------------------------------------
