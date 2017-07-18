@@ -298,7 +298,7 @@ void PairSuperparamagneticSF::allocate()
 
 void PairSuperparamagneticSF::settings(int narg, char **arg)
 {
-  if (narg < 4 || narg > 5)
+  if (narg != 7 )
     error->all(FLERR,"Incorrect args in pair_style command");
 
   if (strcmp(update->unit_style,"electron") == 0)
@@ -312,9 +312,10 @@ void PairSuperparamagneticSF::settings(int narg, char **arg)
   field[0] = force->numeric(FLERR,arg[0]);
   field[1] = force->numeric(FLERR,arg[1]);
   field[2] = force->numeric(FLERR,arg[2]);
-  cut_lj_global = force->numeric(FLERR,arg[3]);
-  if (narg == 4) cut_coul_global = cut_lj_global;
-  else cut_coul_global = force->numeric(FLERR,arg[4]);
+  chi = force->numeric(FLERR,arg[4])/24.0;
+  tolerance = force->numeric(FLERR,arg[5]);
+  cut_lj_global = force->numeric(FLERR,arg[6]);
+  cut_coul_global = cut_lj_global;
 
   // reset cutoffs that have been explicitly set
 
@@ -398,9 +399,6 @@ void PairSuperparamagneticSF::init_style()
   if (!atom->q_flag || !atom->mu_flag || !atom->torque_flag)
     error->all(FLERR,"Pair dipole/sf requires atom attributes q, mu, torque");
 
-  field[0]=0.0;
-  field[1]=0.0;
-  field[2]=1.0;
   neighbor->request(this,instance_me);
 }
 
@@ -647,7 +645,7 @@ int PairSuperparamagneticSF::update_dipoles()
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   double **x = atom->x;
-  double **f = atom->f;
+  double **mu_local = atom->torque;
   double *q = atom->q;
   double **mu = atom->mu;
   double **torque = atom->torque;
@@ -736,17 +734,17 @@ int PairSuperparamagneticSF::update_dipoles()
 
         // force & torque accumulation
 
-        f[i][0] += fx;
-        f[i][1] += fy;
-        f[i][2] += fz;
+        mu_local[i][0] += fx;
+        mu_local[i][1] += fy;
+        mu_local[i][2] += fz;
 
         if (j < nlocal) {
           fjx = fq*forcecouljx;
           fjy = fq*forcecouljy;
           fjz = fq*forcecouljz;
-          f[j][0] -= fjx;
-          f[j][1] -= fjy;
-          f[j][2] -= fjz;
+          mu_local[j][0] -= fjx;
+          mu_local[j][1] -= fjy;
+          mu_local[j][2] -= fjz;
         }
       }
     }
@@ -754,23 +752,21 @@ int PairSuperparamagneticSF::update_dipoles()
 
   double ne = 0.0;
   double ne_local = 0.0;
-  double chi = 0.893/24.0;
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
-    mu[i][0] = field[0] + chi*f[i][0];
-    mu[i][1] = field[1] + chi*f[i][1];
-    mu[i][2] = field[2] + chi*f[i][2];
+    mu[i][0] = field[0] + chi*mu_local[i][0];
+    mu[i][1] = field[1] + chi*mu_local[i][1];
+    mu[i][2] = field[2] + chi*mu_local[i][2];
     ne_local += 0.5*(mu[i][0]*mu[i][0] + mu[i][1]*mu[i][1] + mu[i][2]*mu[i][2]);
-    f[i][0] = 0.0;
-    f[i][1] = 0.0;
-    f[i][2] = 0.0;
+    mu_local[i][0] = 0.0;
+    mu_local[i][1] = 0.0;
+    mu_local[i][2] = 0.0;
   }
-
 
   MPI_Allreduce(&ne_local, &ne, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   double criterion = fabs((ne-thing)/thing);
   converged = 0;
-  if (criterion < 1e-3) {
+  if (criterion < tolerance) {
     converged = 1;
   }
   else {
