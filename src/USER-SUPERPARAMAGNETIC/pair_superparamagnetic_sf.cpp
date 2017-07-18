@@ -298,7 +298,7 @@ void PairSuperparamagneticSF::allocate()
 
 void PairSuperparamagneticSF::settings(int narg, char **arg)
 {
-  if (narg < 1 || narg > 2)
+  if (narg < 4 || narg > 5)
     error->all(FLERR,"Incorrect args in pair_style command");
 
   if (strcmp(update->unit_style,"electron") == 0)
@@ -309,9 +309,12 @@ void PairSuperparamagneticSF::settings(int narg, char **arg)
     force->newton_pair=0;
   }
 
-  cut_lj_global = force->numeric(FLERR,arg[0]);
-  if (narg == 1) cut_coul_global = cut_lj_global;
-  else cut_coul_global = force->numeric(FLERR,arg[1]);
+  field[0] = force->numeric(FLERR,arg[0]);
+  field[1] = force->numeric(FLERR,arg[1]);
+  field[2] = force->numeric(FLERR,arg[2]);
+  cut_lj_global = force->numeric(FLERR,arg[3]);
+  if (narg == 4) cut_coul_global = cut_lj_global;
+  else cut_coul_global = force->numeric(FLERR,arg[4]);
 
   // reset cutoffs that have been explicitly set
 
@@ -395,6 +398,9 @@ void PairSuperparamagneticSF::init_style()
   if (!atom->q_flag || !atom->mu_flag || !atom->torque_flag)
     error->all(FLERR,"Pair dipole/sf requires atom attributes q, mu, torque");
 
+  field[0]=0.0;
+  field[1]=0.0;
+  field[2]=1.0;
   neighbor->request(this,instance_me);
 }
 
@@ -751,9 +757,9 @@ int PairSuperparamagneticSF::update_dipoles()
   double chi = 0.893/24.0;
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
-    mu[i][0] = 0.0 + chi*f[i][0];
-    mu[i][1] = 0.0 + chi*f[i][1];
-    mu[i][2] = 1.0 + chi*f[i][2];
+    mu[i][0] = field[0] + chi*f[i][0];
+    mu[i][1] = field[1] + chi*f[i][1];
+    mu[i][2] = field[2] + chi*f[i][2];
     ne_local += 0.5*(mu[i][0]*mu[i][0] + mu[i][1]*mu[i][1] + mu[i][2]*mu[i][2]);
     f[i][0] = 0.0;
     f[i][1] = 0.0;

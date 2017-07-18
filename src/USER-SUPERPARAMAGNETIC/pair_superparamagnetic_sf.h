@@ -48,6 +48,7 @@ class PairSuperparamagneticSF : public Pair {
   double **lj1,**lj2,**lj3,**lj4;
   double **scale;
   double thing;
+  double field[3];
 
   void allocate();
 
