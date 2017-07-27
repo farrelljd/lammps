@@ -79,6 +79,9 @@ Atom::Atom(LAMMPS *lmp) : Pointers(lmp)
   molindex = molatom = NULL;
   q = NULL;
   mu = NULL;
+  mu_x = NULL;
+  mu_y = NULL;
+  mu_z = NULL;
   omega = angmom = torque = NULL;
   radius = rmass = NULL;
   ellipsoid = line = tri = body = NULL;
@@ -165,6 +168,11 @@ Atom::Atom(LAMMPS *lmp) : Pointers(lmp)
 
   molecule_flag = 0;
   q_flag = mu_flag = 0;
+
+  // USER-SUPERPARAMAGNETIC
+
+  mu_x_flag = mu_y_flag = mu_z_flag = 0;
+
   omega_flag = torque_flag = angmom_flag = 0;
   radius_flag = rmass_flag = 0;
   ellipsoid_flag = line_flag = tri_flag = body_flag = 0;
@@ -266,6 +274,9 @@ Atom::~Atom()
 
   memory->destroy(q);
   memory->destroy(mu);
+  memory->destroy(mu_x);
+  memory->destroy(mu_y);
+  memory->destroy(mu_z);
   memory->destroy(omega);
   memory->destroy(angmom);
   memory->destroy(torque);
@@ -415,6 +426,10 @@ void Atom::create_avec(const char *style, int narg, char **arg, int trysuffix)
 
   molecule_flag = 0;
   q_flag = mu_flag = 0;
+
+  // USER-SUPERPARAMAGNETIC
+
+  mu_x_flag = mu_y_flag = mu_z_flag = 0;
 
   // USER-HAdResS
 
@@ -2126,6 +2141,9 @@ void *Atom::extract(char *name)
   if (strcmp(name,"gradlambdaH") == 0) return (void *) gradlambdaH;
   if (strcmp(name,"replambdaH") == 0) return (void *) replambdaH;
   if (strcmp(name,"mu") == 0) return (void *) mu;
+  if (strcmp(name,"mu_x") == 0) return (void *) mu_x;
+  if (strcmp(name,"mu_y") == 0) return (void *) mu_y;
+  if (strcmp(name,"mu_z") == 0) return (void *) mu_z;
   if (strcmp(name,"omega") == 0) return (void *) omega;
   if (strcmp(name,"angmom") == 0) return (void *) angmom;
   if (strcmp(name,"torque") == 0) return (void *) torque;

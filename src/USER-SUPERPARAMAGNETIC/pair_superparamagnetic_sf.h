@@ -29,6 +29,7 @@ class PairSuperparamagneticSF : public Pair {
   PairSuperparamagneticSF(class LAMMPS *);
   virtual ~PairSuperparamagneticSF();
   virtual void compute(int, int);
+  void compute_forces(int, int);
   void settings(int, char **);
   void coeff(int, char **);
   void init_style();
@@ -40,7 +41,14 @@ class PairSuperparamagneticSF : public Pair {
   virtual double single(int, int, int, int, double, double, double, double &);
   void *extract(const char *, int &);
 
+  virtual int pack_forward_comm(int, int *, double *, int, int *);
+  virtual void unpack_forward_comm(int, int, double *);
+  int pack_reverse_comm(int, int, double *);
+  void unpack_reverse_comm(int, int *, double *);
+  //double memory_usage();
+
  protected:
+  int nmax, iterstep, simstep;
   double cut_lj_global,cut_coul_global;
   double **cut_lj,**cut_ljsq;
   double **cut_coul,**cut_coulsq;
@@ -48,7 +56,9 @@ class PairSuperparamagneticSF : public Pair {
   double **lj1,**lj2,**lj3,**lj4;
   double **scale;
   double thing;
-  double field[3], chi, tolerance;
+  double  b[3], field[3], oscillating, chi, tolerance;
+  int component;
+  enum {X_COMPONENT=0, Y_COMPONENT=1, Z_COMPONENT=2};
 
   void allocate();
 

@@ -41,6 +41,10 @@ static int warn_single = 0;
 
 PairSuperparamagneticSF::PairSuperparamagneticSF(LAMMPS *lmp) : Pair(lmp)
 {
+  nmax = atom-> nmax;
+  simstep = 0;
+  comm_forward = 3;
+  comm_reverse = 3;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -65,9 +69,55 @@ PairSuperparamagneticSF::~PairSuperparamagneticSF()
   }
 }
 
+void PairSuperparamagneticSF::compute(int eflag, int vflag)
+{
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
+
+  // self-consistently determine induced dipoles
+
+  simstep++;
+  int converged = 0;
+  if (oscillating) {
+    for (component=0; component<3; component++) {
+      thing = 1e10;
+      converged = 0;
+      field[0] = 0.0;
+      field[1] = 0.0;
+      field[2] = 0.0;
+      field[component] = b[component];
+      iterstep = 0;
+
+      while (converged == 0) {
+        converged = update_dipoles();
+      }
+      compute_forces(eflag, vflag);
+    }
+  } else {
+    thing = 1e10;
+    component = 0;
+    iterstep = 0;
+    while (converged == 0) {
+      converged = update_dipoles();
+    }
+    compute_forces(eflag, vflag);
+  }
+
+
+//  int converged = 0;
+//  thing = 1e10;
+//  component = 0;
+//  while (converged == 0) {
+//    converged = update_dipoles();
+//  }
+//  compute_forces(eflag, vflag);
+
+  if (vflag_fdotr) virial_fdotr_compute();
+}
+
 /* ---------------------------------------------------------------------- */
 
-void PairSuperparamagneticSF::compute(int eflag, int vflag)
+void PairSuperparamagneticSF::compute_forces(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,ecoul,fx,fy,fz;
@@ -83,14 +133,10 @@ void PairSuperparamagneticSF::compute(int eflag, int vflag)
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   evdwl = ecoul = 0.0;
-  if (eflag || vflag) ev_setup(eflag,vflag);
-  else evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
   double **f = atom->f;
   double *q = atom->q;
-  double **mu = atom->mu;
-  double **torque = atom->torque;
   int *type = atom->type;
   int nlocal = atom->nlocal;
   double *special_coul = force->special_coul;
@@ -98,18 +144,23 @@ void PairSuperparamagneticSF::compute(int eflag, int vflag)
   int newton_pair = force->newton_pair;
   double qqrd2e = force->qqrd2e;
 
+  double **mu;
+  switch (component) {
+  case X_COMPONENT:
+    mu = atom->mu_x;
+    break;
+  case Y_COMPONENT:
+    mu = atom->mu_y;
+    break;
+  case Z_COMPONENT:
+    mu = atom->mu_z;
+    break;
+  }
+
   inum = list->inum;
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
-
-  // self-consistently determine induced dipoles
-
-  int converged = 0;
-  thing = 1e10;
-  while (converged == 0) {
-    converged = update_dipoles();
-  }
 
   // loop over neighbors of my atoms
 
@@ -139,96 +190,53 @@ void PairSuperparamagneticSF::compute(int eflag, int vflag)
         r2inv = 1.0/rsq;
         rinv = sqrt(r2inv);
 
-        // atom can have both a charge and dipole
-        // i,j = charge-charge, dipole-dipole, dipole-charge, or charge-dipole
-
         forcecoulx = forcecouly = forcecoulz = 0.0;
-        tixcoul = tiycoul = tizcoul = 0.0;
-        tjxcoul = tjycoul = tjzcoul = 0.0;
 
         if (rsq < cut_coulsq[itype][jtype]) {
 
           rcutcoul2inv=1.0/cut_coulsq[itype][jtype];
 
-          if (mu[i][3] > 0.0 && mu[j][3] > 0.0) {
-            r3inv = r2inv*rinv;
-            r5inv = r3inv*r2inv;
+          r3inv = r2inv*rinv;
+          r5inv = r3inv*r2inv;
 
-            pdotp = mu[i][0]*mu[j][0] + mu[i][1]*mu[j][1] + mu[i][2]*mu[j][2];
-            pidotr = mu[i][0]*delx + mu[i][1]*dely + mu[i][2]*delz;
-            pjdotr = mu[j][0]*delx + mu[j][1]*dely + mu[j][2]*delz;
+          pdotp = mu[i][0]*mu[j][0] + mu[i][1]*mu[j][1] + mu[i][2]*mu[j][2];
+          pidotr = mu[i][0]*delx + mu[i][1]*dely + mu[i][2]*delz;
+          pjdotr = mu[j][0]*delx + mu[j][1]*dely + mu[j][2]*delz;
 
-            afac = 1.0 - rsq*rsq * rcutcoul2inv*rcutcoul2inv;
-            pre1 = afac * ( pdotp - 3.0 * r2inv * pidotr * pjdotr );
-            aforcecoulx = pre1*delx;
-            aforcecouly = pre1*dely;
-            aforcecoulz = pre1*delz;
+          afac = 1.0 - rsq*rsq * rcutcoul2inv*rcutcoul2inv;
+          pre1 = afac * ( pdotp - 3.0 * r2inv * pidotr * pjdotr );
+          aforcecoulx = pre1*delx;
+          aforcecouly = pre1*dely;
+          aforcecoulz = pre1*delz;
 
-            bfac = 1.0 - 4.0*rsq*sqrt(rsq*rcutcoul2inv)*rcutcoul2inv +
-              3.0*rsq*rsq*rcutcoul2inv*rcutcoul2inv;
-            presf = 2.0 * r2inv * pidotr * pjdotr;
-            bforcecoulx = bfac * (pjdotr*mu[i][0]+pidotr*mu[j][0]-presf*delx);
-            bforcecouly = bfac * (pjdotr*mu[i][1]+pidotr*mu[j][1]-presf*dely);
-            bforcecoulz = bfac * (pjdotr*mu[i][2]+pidotr*mu[j][2]-presf*delz);
+          bfac = 1.0 - 4.0*rsq*sqrt(rsq*rcutcoul2inv)*rcutcoul2inv +
+            3.0*rsq*rsq*rcutcoul2inv*rcutcoul2inv;
+          presf = 2.0 * r2inv * pidotr * pjdotr;
+          bforcecoulx = bfac * (pjdotr*mu[i][0]+pidotr*mu[j][0]-presf*delx);
+          bforcecouly = bfac * (pjdotr*mu[i][1]+pidotr*mu[j][1]-presf*dely);
+          bforcecoulz = bfac * (pjdotr*mu[i][2]+pidotr*mu[j][2]-presf*delz);
 
-            forcecoulx += 3.0 * r5inv * ( aforcecoulx + bforcecoulx );
-            forcecouly += 3.0 * r5inv * ( aforcecouly + bforcecouly );
-            forcecoulz += 3.0 * r5inv * ( aforcecoulz + bforcecoulz );
+          forcecoulx += 3.0 * r5inv * ( aforcecoulx + bforcecoulx );
+          forcecouly += 3.0 * r5inv * ( aforcecouly + bforcecouly );
+          forcecoulz += 3.0 * r5inv * ( aforcecoulz + bforcecoulz );
 
-            pre2 = 3.0 * bfac * r5inv * pjdotr;
-            pre3 = 3.0 * bfac * r5inv * pidotr;
-            pre4 = -bfac * r3inv;
-
-            crossx = pre4 * (mu[i][1]*mu[j][2] - mu[i][2]*mu[j][1]);
-            crossy = pre4 * (mu[i][2]*mu[j][0] - mu[i][0]*mu[j][2]);
-            crossz = pre4 * (mu[i][0]*mu[j][1] - mu[i][1]*mu[j][0]);
-
-            tixcoul += crossx + pre2 * (mu[i][1]*delz - mu[i][2]*dely);
-            tiycoul += crossy + pre2 * (mu[i][2]*delx - mu[i][0]*delz);
-            tizcoul += crossz + pre2 * (mu[i][0]*dely - mu[i][1]*delx);
-            tjxcoul += -crossx + pre3 * (mu[j][1]*delz - mu[j][2]*dely);
-            tjycoul += -crossy + pre3 * (mu[j][2]*delx - mu[j][0]*delz);
-            tjzcoul += -crossz + pre3 * (mu[j][0]*dely - mu[j][1]*delx);
-          }
         }
 
-        // LJ interaction
-
-        if (rsq < cut_ljsq[itype][jtype]) {
-          r6inv = r2inv*r2inv*r2inv;
-          forceljcut = r6inv*(lj1[itype][jtype]*r6inv-lj2[itype][jtype])*r2inv;
-
-          rcutlj2inv = 1.0 / cut_ljsq[itype][jtype];
-          rcutlj6inv = rcutlj2inv * rcutlj2inv * rcutlj2inv;
-          forceljsf = (lj1[itype][jtype]*rcutlj6inv - lj2[itype][jtype]) *
-            rcutlj6inv * rcutlj2inv;
-
-          forcelj = factor_lj * (forceljcut - forceljsf);
-        } else forcelj = 0.0;
-
-        // total force
-
         fq = factor_coul*qqrd2e*scale[itype][jtype];
-        fx = fq*forcecoulx + delx*forcelj;
-        fy = fq*forcecouly + dely*forcelj;
-        fz = fq*forcecoulz + delz*forcelj;
+        fx = fq*forcecoulx;
+        fy = fq*forcecouly;
+        fz = fq*forcecoulz;
 
-        // force & torque accumulation
+        // force accumulation
 
         f[i][0] += fx;
         f[i][1] += fy;
         f[i][2] += fz;
-        torque[i][0] += fq*tixcoul;
-        torque[i][1] += fq*tiycoul;
-        torque[i][2] += fq*tizcoul;
 
         if (newton_pair || j < nlocal) {
           f[j][0] -= fx;
           f[j][1] -= fy;
           f[j][2] -= fz;
-          torque[j][0] += fq*tjxcoul;
-          torque[j][1] += fq*tjycoul;
-          torque[j][2] += fq*tjzcoul;
         }
 
         if (eflag) {
@@ -238,20 +246,9 @@ void PairSuperparamagneticSF::compute(int eflag, int vflag)
             ecoul *= qtmp * q[j] * rinv;
             if (mu[i][3] > 0.0 && mu[j][3] > 0.0)
               ecoul += bfac * (r3inv*pdotp - 3.0*r5inv*pidotr*pjdotr);
-            if (mu[i][3] > 0.0 && q[j] != 0.0)
-              ecoul += -q[j] * r3inv * pqfac * pidotr;
-            if (mu[j][3] > 0.0 && qtmp != 0.0)
-              ecoul += qtmp * r3inv * qpfac * pjdotr;
-            ecoul *= factor_coul*qqrd2e*scale[itype][jtype];
           } else ecoul = 0.0;
 
-          if (rsq < cut_ljsq[itype][jtype]) {
-            evdwl = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype])+
-              rcutlj6inv*(6*lj3[itype][jtype]*rcutlj6inv-3*lj4[itype][jtype])*
-              rsq*rcutlj2inv+
-              rcutlj6inv*(-7*lj3[itype][jtype]*rcutlj6inv+4*lj4[itype][jtype]);
-            evdwl *= factor_lj;
-          } else evdwl = 0.0;
+          evdwl = 0.0;
         }
 
         if (evflag) ev_tally_xyz(i,j,nlocal,newton_pair,
@@ -259,8 +256,6 @@ void PairSuperparamagneticSF::compute(int eflag, int vflag)
       }
     }
   }
-
-  if (vflag_fdotr) virial_fdotr_compute();
 }
 
 /* ----------------------------------------------------------------------
@@ -298,20 +293,20 @@ void PairSuperparamagneticSF::allocate()
 
 void PairSuperparamagneticSF::settings(int narg, char **arg)
 {
+
   if (narg != 7 )
     error->all(FLERR,"Incorrect args in pair_style command");
 
   if (strcmp(update->unit_style,"electron") == 0)
     error->all(FLERR,"Cannot (yet) use 'electron' units with dipoles");
 
-  if (force->newton_pair==1) {
-    error->warning(FLERR,"Cannot (yet) use 'newton on' with induced dipoles; switching off");
-    force->newton_pair=0;
-  }
-
-  field[0] = force->numeric(FLERR,arg[0]);
-  field[1] = force->numeric(FLERR,arg[1]);
-  field[2] = force->numeric(FLERR,arg[2]);
+  b[0] = force->numeric(FLERR,arg[0]);
+  b[1] = force->numeric(FLERR,arg[1]);
+  b[2] = force->numeric(FLERR,arg[2]);
+  oscillating = force->numeric(FLERR,arg[3]);
+  field[0] = b[0];
+  field[1] = b[1];
+  field[2] = b[2];
   chi = force->numeric(FLERR,arg[4])/24.0;
   tolerance = force->numeric(FLERR,arg[5]);
   cut_lj_global = force->numeric(FLERR,arg[6]);
@@ -396,8 +391,8 @@ void PairSuperparamagneticSF::coeff(int narg, char **arg)
 
 void PairSuperparamagneticSF::init_style()
 {
-  if (!atom->q_flag || !atom->mu_flag || !atom->torque_flag)
-    error->all(FLERR,"Pair dipole/sf requires atom attributes q, mu, torque");
+  if (!atom->mu_flag || !atom->mu_x_flag || !atom->mu_y_flag || !atom->mu_z_flag)
+    error->all(FLERR,"Pair superparamagnetic requires atom attributes mu, mu_x, mu_y, mu_z");
 
   neighbor->request(this,instance_me);
 }
@@ -645,10 +640,8 @@ int PairSuperparamagneticSF::update_dipoles()
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   double **x = atom->x;
-  double **mu_local = atom->torque;
+  double **mu_local = atom->mu;
   double *q = atom->q;
-  double **mu = atom->mu;
-  double **torque = atom->torque;
   int *type = atom->type;
   int nlocal = atom->nlocal;
   double *special_coul = force->special_coul;
@@ -656,12 +649,39 @@ int PairSuperparamagneticSF::update_dipoles()
   int newton_pair = force->newton_pair;
   double qqrd2e = force->qqrd2e;
 
+  double **mu;
+  switch (component) {
+  case X_COMPONENT:
+    //if (comm->me==0) fprintf(screen,"x component: ");
+    mu = atom->mu_x;
+    break;
+  case Y_COMPONENT:
+    //if (comm->me==0) fprintf(screen,"y component: ");
+    mu = atom->mu_y;
+    break;
+  case Z_COMPONENT:
+    //if (comm->me==0) fprintf(screen,"z component: ");
+    mu = atom->mu_z;
+    break;
+  }
+
+  int m=0;
+  while (m<(atom->nlocal+atom->nghost)) {
+    mu_local[m][0] = 0.0;
+    mu_local[m][1] = 0.0;
+    mu_local[m][2] = 0.0;
+    mu_local[m][3] = 0.0;
+    m++;
+  }
+
+  iterstep++;
+
+  // loop over neighbors of my atoms
+
   inum = list->inum;
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
-
-  // loop over neighbors of my atoms
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
@@ -688,9 +708,6 @@ int PairSuperparamagneticSF::update_dipoles()
         r2inv = 1.0/rsq;
         rinv = sqrt(r2inv);
 
-        // atom can have both a charge and dipole
-        // i,j = charge-charge, dipole-dipole, dipole-charge, or charge-dipole
-
         forcecoulx = forcecouly = forcecoulz = 0.0;
         forcecouljx = forcecouljy = forcecouljz = 0.0;
 
@@ -698,21 +715,20 @@ int PairSuperparamagneticSF::update_dipoles()
 
           rcutcoul2inv=1.0/cut_coulsq[itype][jtype];
 
-          if (mu[j][3] > 0.0) {
-            r3inv = r2inv*rinv;
-            r5inv = r3inv*r2inv;
-            pjdotr = mu[j][0]*delx + mu[j][1]*dely + mu[j][2]*delz;
-            pre1 = 3.0 * r5inv * pjdotr * (1-rsq*rcutcoul2inv);
-            qpfac = 1.0 - 3.0*rsq*rcutcoul2inv +
-              2.0*rsq*sqrt(rsq*rcutcoul2inv)*rcutcoul2inv;
-            pre2 = r3inv * qpfac;
+          r3inv = r2inv*rinv;
+          r5inv = r3inv*r2inv;
+          pjdotr = mu[j][0]*delx + mu[j][1]*dely + mu[j][2]*delz;
+          pre1 = 3.0 * r5inv * pjdotr * (1-rsq*rcutcoul2inv);
+          qpfac = 1.0 - 3.0*rsq*rcutcoul2inv +
+            2.0*rsq*sqrt(rsq*rcutcoul2inv)*rcutcoul2inv;
+          pre2 = r3inv * qpfac;
 
-            forcecoulx += pre1*delx - pre2*mu[j][0];
-            forcecouly += pre1*dely - pre2*mu[j][1];
-            forcecoulz += pre1*delz - pre2*mu[j][2];
-          }
+          forcecoulx += pre1*delx - pre2*mu[j][0];
+          forcecouly += pre1*dely - pre2*mu[j][1];
+          forcecoulz += pre1*delz - pre2*mu[j][2];
 
-          if (mu[i][3] > 0.0 && j < nlocal) {
+          fq = factor_coul*qqrd2e*scale[itype][jtype];
+          if (newton_pair || j < nlocal) {
             r3inv = r2inv*rinv;
             r5inv = r3inv*r2inv;
             pidotr = mu[i][0]*delx + mu[i][1]*dely + mu[i][2]*delz;
@@ -721,9 +737,9 @@ int PairSuperparamagneticSF::update_dipoles()
               2.0*rsq*sqrt(rsq*rcutcoul2inv)*rcutcoul2inv;
             pre2 = r3inv * pqfac;
 
-            forcecouljx += pre2*mu[i][0] - pre1*delx;
-            forcecouljy += pre2*mu[i][1] - pre1*dely;
-            forcecouljz += pre2*mu[i][2] - pre1*delz;
+            forcecouljx += pre1*delx - pre2*mu[i][0];
+            forcecouljy += pre1*dely - pre2*mu[i][1];
+            forcecouljz += pre1*delz - pre2*mu[i][2];
           }
         }
 
@@ -731,24 +747,22 @@ int PairSuperparamagneticSF::update_dipoles()
         fx = fq*forcecoulx;
         fy = fq*forcecouly;
         fz = fq*forcecoulz;
-
-        // force & torque accumulation
-
         mu_local[i][0] += fx;
         mu_local[i][1] += fy;
         mu_local[i][2] += fz;
-
-        if (j < nlocal) {
+        if (newton_pair || j < nlocal) {
           fjx = fq*forcecouljx;
           fjy = fq*forcecouljy;
           fjz = fq*forcecouljz;
-          mu_local[j][0] -= fjx;
-          mu_local[j][1] -= fjy;
-          mu_local[j][2] -= fjz;
+          mu_local[j][0] += fjx;
+          mu_local[j][1] += fjy;
+          mu_local[j][2] += fjz;
         }
       }
     }
   }
+
+  if (newton_pair) comm->reverse_comm_pair(this);
 
   double ne = 0.0;
   double ne_local = 0.0;
@@ -757,15 +771,16 @@ int PairSuperparamagneticSF::update_dipoles()
     mu[i][0] = field[0] + chi*mu_local[i][0];
     mu[i][1] = field[1] + chi*mu_local[i][1];
     mu[i][2] = field[2] + chi*mu_local[i][2];
-    ne_local += 0.5*(mu[i][0]*mu[i][0] + mu[i][1]*mu[i][1] + mu[i][2]*mu[i][2]);
-    mu_local[i][0] = 0.0;
-    mu_local[i][1] = 0.0;
-    mu_local[i][2] = 0.0;
+    mu[i][3] = sqrt(mu[i][0]*mu[i][0] + mu[i][1]*mu[i][1] + mu[i][2]*mu[i][2]);
+    ne_local += 0.5*(mu[i][3]*mu[i][3]);
   }
+
+  comm->forward_comm_pair(this);
 
   MPI_Allreduce(&ne_local, &ne, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   double criterion = fabs((ne-thing)/thing);
   converged = 0;
+  //if (comm->me==0) fprintf(screen,"iteration, criterion, converged:%5i%15.10f%10i\n",iterstep,criterion,criterion<tolerance);
   if (criterion < tolerance) {
     converged = 1;
   }
@@ -774,3 +789,103 @@ int PairSuperparamagneticSF::update_dipoles()
   }
   return converged;
 }
+
+/* ---------------------------------------------------------------------- */
+
+int PairSuperparamagneticSF::pack_forward_comm(int n, int *list, double *buf,
+                               int pbc_flag, int *pbc)
+{
+  int i,j,m;
+  double **mu;
+  switch (component) {
+  case X_COMPONENT:
+    mu = atom->mu_x;
+    break;
+  case Y_COMPONENT:
+    mu = atom->mu_y;
+    break;
+  case Z_COMPONENT:
+    mu = atom->mu_z;
+    break;
+  }
+
+  m = 0;
+  for (i = 0; i < n; i++) {
+    j = list[i];
+    buf[m++] = mu[j][0];
+    buf[m++] = mu[j][1];
+    buf[m++] = mu[j][2];
+  }
+  return m;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairSuperparamagneticSF::unpack_forward_comm(int n, int first, double *buf)
+{
+  int i,m,last;
+  double **mu;
+  switch (component) {
+  case X_COMPONENT:
+    mu = atom->mu_x;
+    break;
+  case Y_COMPONENT:
+    mu = atom->mu_y;
+    break;
+  case Z_COMPONENT:
+    mu = atom->mu_z;
+    break;
+  }
+
+  m = 0;
+  last = first + n;
+  for (i = first; i < last; i++) {
+    mu[i][0] = buf[m++];
+    mu[i][1] = buf[m++];
+    mu[i][2] = buf[m++];
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+int PairSuperparamagneticSF::pack_reverse_comm(int n, int first, double *buf)
+{
+  int i,m,last;
+  double **mu_local = atom->mu;
+
+  m = 0;
+  last = first + n;
+  for (i = first; i < last; i++) {
+    buf[m++] = mu_local[i][0];
+    buf[m++] = mu_local[i][1];
+    buf[m++] = mu_local[i][2];
+  }
+  return m;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairSuperparamagneticSF::unpack_reverse_comm(int n, int *list, double *buf)
+{
+  int i,j,m;
+  double **mu_local = atom->mu;
+  int nlocal = atom->nlocal;
+
+  m = 0;
+  for (i = 0; i < n; i++) {
+    j = list[i];
+    mu_local[j][0] += buf[m++];
+    mu_local[j][1] += buf[m++];
+    mu_local[j][2] += buf[m++];
+  }
+}
+
+/* ----------------------------------------------------------------------
+   memory usage of local atom-based arrays
+------------------------------------------------------------------------- */
+
+//double PairSuperparamagneticSF::memory_usage()
+//{
+//  double bytes = 1000 * nmax * sizeof(double);
+//  return bytes;
+//}
