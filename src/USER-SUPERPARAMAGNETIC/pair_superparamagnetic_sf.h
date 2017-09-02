@@ -55,7 +55,7 @@ class PairSuperparamagneticSF : public Pair {
   double **epsilon,**sigma;
   double **lj1,**lj2,**lj3,**lj4;
   double **scale;
-  double thing;
+  double scf_energy;
   double  b[3], field[3], oscillating, chi, tolerance;
   int component;
   enum {X_COMPONENT=0, Y_COMPONENT=1, Z_COMPONENT=2};

@@ -80,7 +80,7 @@ void PairSuperparamagneticSF::compute(int eflag, int vflag)
   int converged = 0;
   if (oscillating) {
     for (component=0; component<3; component++) {
-      thing = 1e10;
+      scf_energy = 1e10;
       converged = 0;
       field[0] = 0.0;
       field[1] = 0.0;
@@ -94,7 +94,7 @@ void PairSuperparamagneticSF::compute(int eflag, int vflag)
       compute_forces(eflag, vflag);
     }
   } else {
-    thing = 1e10;
+    scf_energy = 1e10;
     component = 0;
     iterstep = 0;
     while (converged == 0) {
@@ -105,7 +105,7 @@ void PairSuperparamagneticSF::compute(int eflag, int vflag)
 
 
 //  int converged = 0;
-//  thing = 1e10;
+//  scf_energy = 1e10;
 //  component = 0;
 //  while (converged == 0) {
 //    converged = update_dipoles();
@@ -778,14 +778,14 @@ int PairSuperparamagneticSF::update_dipoles()
   comm->forward_comm_pair(this);
 
   MPI_Allreduce(&ne_local, &ne, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-  double criterion = fabs((ne-thing)/thing);
+  double criterion = fabs((ne-scf_energy)/scf_energy);
   converged = 0;
   //if (comm->me==0) fprintf(screen,"iteration, criterion, converged:%5i%15.10f%10i\n",iterstep,criterion,criterion<tolerance);
   if (criterion < tolerance) {
     converged = 1;
   }
   else {
-    thing = ne;
+    scf_energy = ne;
   }
   return converged;
 }
