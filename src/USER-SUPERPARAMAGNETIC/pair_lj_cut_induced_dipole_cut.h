@@ -49,7 +49,7 @@ class PairLJCutInducedDipoleCut : public Pair {
   double cut_lj_global,cut_coul_global;
   double **cut_lj,**cut_ljsq,**cut_ljsq3inv,**cut_ljsq4inv;
   double **cut_coul,**cut_coulsq;
-  double **epsilon,**sigma;
+  double **epsilon,**sigma, **factor;
   double **lj1,**lj2,**lj3,**lj4,**offset;
 
   int nmax, iterstep, simstep, component;
