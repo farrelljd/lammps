@@ -70,19 +70,7 @@ void PairLJCutInducedDipoleCutMemory::compute(int eflag, int vflag)
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = vflag_fdotr = 0;
 
-  int i,ii,jj,inum,jnum;
-  int *ilist,*jlist,*numneigh,**firstneigh;
-
-  inum = list->inum;
-  ilist = list->ilist;
-  numneigh = list->numneigh;
-  int max_jnum = 0;
-
-  for (ii = 0; ii < inum; ii++) {
-    i = ilist[ii];
-    jnum = numneigh[i];
-    max_jnum = std::max(max_jnum, jnum);
-  }
+  compute_distances();
 
   // self-consistently determine induced dipoles
   simstep++;
@@ -129,8 +117,61 @@ void PairLJCutInducedDipoleCutMemory::compute(int eflag, int vflag)
   }
   if (vflag_fdotr) virial_fdotr_compute();
 
-  memory->create(distances,inum+1,jnum+1,"pair:distances");
   memory->destroy(distances);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairLJCutInducedDipoleCutMemory::compute_distances()
+{
+  int i,j,ii,jj,inum,jnum,itype,jtype;
+  int *ilist,*jlist,*numneigh,**firstneigh;
+  double xtmp, ytmp, ztmp, delx, dely, delz;
+  double rsq, r2inv, r3inv, r5inv, r7inv;
+  double **x = atom->x;
+
+  inum = list->inum;
+  ilist = list->ilist;
+  numneigh = list->numneigh;
+  firstneigh = list->firstneigh;
+  int max_jnum = 0;
+
+  // allocate arrays
+  for (ii = 0; ii < inum; ii++) {
+    i = ilist[ii];
+    jnum = numneigh[i];
+    max_jnum = std::max(max_jnum, jnum);
+  }
+  memory->create(distances,inum+1,max_jnum+1,8+1,"pair:distances");
+
+  for (ii = 0; ii < inum; ii++) {
+    i = ilist[ii];
+    xtmp = x[i][0];
+    ytmp = x[i][1];
+    ztmp = x[i][2];
+    jlist = firstneigh[i];
+    jnum = numneigh[i];
+
+    for (jj = 0; jj < jnum; jj++) {
+      j = jlist[jj];
+      delx = xtmp - x[j][0];
+      dely = ytmp - x[j][1];
+      delz = ztmp - x[j][2];
+      rsq = delx*delx + dely*dely + delz*delz;
+      r2inv = 1.0/rsq;
+      r3inv = r2inv*sqrt(r2inv);
+      r5inv = r3inv*r2inv;
+      r7inv = r5inv*r2inv;
+      distances[ii][jj][0] = delx;
+      distances[ii][jj][1] = dely;
+      distances[ii][jj][2] = delz;
+      distances[ii][jj][3] = rsq;
+      distances[ii][jj][4] = r2inv;
+      distances[ii][jj][5] = r3inv;
+      distances[ii][jj][6] = r5inv;
+      distances[ii][jj][7] = r7inv;
+    }
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -185,45 +226,33 @@ void PairLJCutInducedDipoleCutMemory::compute_forces(int eflag, int vflag)
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
-    xtmp = x[i][0];
-    ytmp = x[i][1];
-    ztmp = x[i][2];
     itype = type[i];
     jlist = firstneigh[i];
     jnum = numneigh[i];
 
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
-      factor_lj = special_lj[sbmask(j)];
-      factor_coul = special_coul[sbmask(j)];
-      factor_coul *= 1.0 / 4.0 / MathConst::MY_PI;
-      if (oscillating) factor_coul/=3;
       j &= NEIGHMASK;
-
-      delx = xtmp - x[j][0];
-      dely = ytmp - x[j][1];
-      delz = ztmp - x[j][2];
-      rsq = delx*delx + dely*dely + delz*delz;
       jtype = type[j];
 
+      factor_lj = special_lj[sbmask(j)];
+      factor_coul = special_coul[sbmask(j)] / MathConst::MY_4PI;
+      if (oscillating) factor_coul/=3;
+
+      delx = distances[ii][jj][0];
+      dely = distances[ii][jj][1];
+      delz = distances[ii][jj][2];
+      rsq = distances[ii][jj][3];
+
       if (rsq < cutsq[itype][jtype]) {
-        r2inv = 1.0/rsq;
-        rinv = sqrt(r2inv);
+        r2inv = distances[ii][jj][4];
 
         forcecoulx = forcecouly = forcecoulz = 0.0;
 
         if (rsq < cut_coulsq[itype][jtype]) {
 
-          //if (rsq > cut_ljsq[itype][jtype]) {
-          if (1) {
-            r3inv = r2inv*rinv;
-            r5inv = r3inv*r2inv;
-            r7inv = r5inv*r2inv;
-          } else {
-            r3inv = r2inv*rinv;
-            r5inv = rinv*cut_ljsq4inv[itype][jtype];
-            r7inv = r3inv*cut_ljsq4inv[itype][jtype];
-          };
+          r5inv = distances[ii][jj][6];
+          r7inv = distances[ii][jj][7];
 
           pdotp = mu[i][0]*mu[j][0] + mu[i][1]*mu[j][1] + mu[i][2]*mu[j][2];
           pidotr = mu[i][0]*delx + mu[i][1]*dely + mu[i][2]*delz;
@@ -400,6 +429,8 @@ void PairLJCutInducedDipoleCutMemory::init_style()
 {
   if (!atom->mu_flag || !atom->mu_x_flag || !atom->mu_y_flag || !atom->mu_z_flag)
     error->all(FLERR,"Pair lj/cut/induced-dipole/cut requires atom attributes mu, mu_x, mu_y, mu_z");
+  if (force->newton_pair == 0)
+    error->all(FLERR,"Pair style PAIR_LJ_CUT_INDUCED_DIPOLE_CUT_MEMORY requires newton pair on");
   neighbor->request(this,instance_me);
 }
 
@@ -539,13 +570,13 @@ int PairLJCutInducedDipoleCutMemory::update_dipoles()
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,ecoul,fx,fy,fz,fjx,fjy,fjz,ifactor,ienergy;
   double rsq,rinv,r2inv,r6inv,r3inv,r5inv;
-  double forcecoulx,forcecouly,forcecoulz,forcecouljx,forcecouljy,forcecouljz;
+  double local_ij_x,local_ij_y,local_ij_z,local_ji_x,local_ji_y,local_ji_z;
   double fq,pidotr,pjdotr,pre1,pre2;
   double factor_coul;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   double **x = atom->x;
-  double **mu_local = atom->mu;
+  double **local_field = atom->mu;
   int *type = atom->type;
   int nlocal = atom->nlocal;
   double *special_coul = force->special_coul;
@@ -567,23 +598,44 @@ int PairLJCutInducedDipoleCutMemory::update_dipoles()
   }
   if (simstep==1 && iterstep==0) {
     int m=0;
-    while (m<(atom->nlocal+atom->nghost)) {
-      mu[m][0] = field[0];
-      mu[m][1] = field[1];
-      mu[m][2] = field[2];
-      mu[m][3] = sqrt(field[0]*field[0]+field[1]*field[1]+field[2]*field[2]);
-      m++;
+    if (newton_pair) {
+      while (m<(atom->nlocal+atom->nghost)) {
+        mu[m][0] = field[0];
+        mu[m][1] = field[1];
+        mu[m][2] = field[2];
+        mu[m][3] = sqrt(field[0]*field[0]+field[1]*field[1]+field[2]*field[2]);
+        m++;
+      }
+    } else {
+      while (m<(atom->nlocal)) {
+        mu[m][0] = field[0];
+        mu[m][1] = field[1];
+        mu[m][2] = field[2];
+        mu[m][3] = sqrt(field[0]*field[0]+field[1]*field[1]+field[2]*field[2]);
+        m++;
+      }
     }
   }
 
   int m=0;
-  while (m<(atom->nlocal+atom->nghost)) {
-    mu_local[m][0] = 0.0;
-    mu_local[m][1] = 0.0;
-    mu_local[m][2] = 0.0;
-    mu_local[m][3] = 0.0;
-    m++;
+  if (newton_pair) {
+    while (m<(atom->nlocal+atom->nghost)) {
+      local_field[m][0] = 0.0;
+      local_field[m][1] = 0.0;
+      local_field[m][2] = 0.0;
+      local_field[m][3] = 0.0;
+      m++;
+    }
+  } else {
+    while (m<(atom->nlocal)) {
+      local_field[m][0] = 0.0;
+      local_field[m][1] = 0.0;
+      local_field[m][2] = 0.0;
+      local_field[m][3] = 0.0;
+      m++;
+    }
   }
+
 
   iterstep++;
 
@@ -596,69 +648,63 @@ int PairLJCutInducedDipoleCutMemory::update_dipoles()
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
-    xtmp = x[i][0];
-    ytmp = x[i][1];
-    ztmp = x[i][2];
     itype = type[i];
     jlist = firstneigh[i];
     jnum = numneigh[i];
 
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
-      factor_coul = special_coul[sbmask(j)];
+      factor_coul = special_coul[sbmask(j)] / MathConst::MY_4PI;
       j &= NEIGHMASK;
 
-      delx = xtmp - x[j][0];
-      dely = ytmp - x[j][1];
-      delz = ztmp - x[j][2];
-      rsq = delx*delx + dely*dely + delz*delz;
+      delx = distances[ii][jj][0];
+      dely = distances[ii][jj][1];
+      delz = distances[ii][jj][2];
+      rsq = distances[ii][jj][3];
       jtype = type[j];
 
       if (rsq < cut_coulsq[itype][jtype]) {
-        r2inv = 1.0/rsq;
-        rinv = sqrt(r2inv);
-
-        forcecoulx = forcecouly = forcecoulz = 0.0;
-        forcecouljx = forcecouljy = forcecouljz = 0.0;
-
-        r3inv = r2inv*rinv/MathConst::MY_4PI;
-        r5inv = r3inv*r2inv;
+        r3inv = distances[ii][jj][5];
+        r5inv = distances[ii][jj][6];
 
         pjdotr = mu[j][0]*delx + mu[j][1]*dely + mu[j][2]*delz;
         pre1 = (3.0 * r5inv * pjdotr);
         pre2 = r3inv;
 
-        forcecoulx += pre1*delx - pre2*mu[j][0];
-        forcecouly += pre1*dely - pre2*mu[j][1];
-        forcecoulz += pre1*delz - pre2*mu[j][2];
+        local_ij_x = local_ij_y = local_ij_z = 0.0;
+        local_ji_x = local_ji_y = local_ji_z = 0.0;
+
+        local_ij_x += pre1*delx - pre2*mu[j][0];
+        local_ij_y += pre1*dely - pre2*mu[j][1];
+        local_ij_z += pre1*delz - pre2*mu[j][2];
 
         if (newton_pair || j < nlocal) {
 
           pidotr = mu[i][0]*delx + mu[i][1]*dely + mu[i][2]*delz;
-          pre1 = 3.0*r5inv * pidotr;
+          pre1 = (3.0 * r5inv * pidotr);
 
-          forcecouljx += pre1*delx - pre2*mu[i][0];
-          forcecouljy += pre1*dely - pre2*mu[i][1];
-          forcecouljz += pre1*delz - pre2*mu[i][2];
+          local_ji_x += pre1*delx - pre2*mu[i][0];
+          local_ji_y += pre1*dely - pre2*mu[i][1];
+          local_ji_z += pre1*delz - pre2*mu[i][2];
         }
       }
 
       fq = factor_coul*qqrd2e;
 
-      fx = fq*forcecoulx;
-      fy = fq*forcecouly;
-      fz = fq*forcecoulz;
-      mu_local[i][0] += fx;
-      mu_local[i][1] += fy;
-      mu_local[i][2] += fz;
+      fx = fq*local_ij_x;
+      fy = fq*local_ij_y;
+      fz = fq*local_ij_z;
+      local_field[i][0] += fx;
+      local_field[i][1] += fy;
+      local_field[i][2] += fz;
 
       if (newton_pair || j < nlocal) {
-        fjx = fq*forcecouljx;
-        fjy = fq*forcecouljy;
-        fjz = fq*forcecouljz;
-        mu_local[j][0] += fjx;
-        mu_local[j][1] += fjy;
-        mu_local[j][2] += fjz;
+        fjx = fq*local_ji_x;
+        fjy = fq*local_ji_y;
+        fjz = fq*local_ji_z;
+        local_field[j][0] += fjx;
+        local_field[j][1] += fjy;
+        local_field[j][2] += fjz;
       }
     }
   }
@@ -667,19 +713,20 @@ int PairLJCutInducedDipoleCutMemory::update_dipoles()
 
   double ne = 0.0;
   double ne_local = 0.0;
-  for (ii = 0; ii < inum; ii++) {
-    i = ilist[ii];
+
+  //for (ii = 0; ii < inum; ii++) {
+  for (i = 0; i < inum; i++) {
+    //i = ilist[ii];
     itype = type[i];
     ifactor = factor[itype][itype];
-    mu[i][0] = ifactor*(field[0] + mu_local[i][0]);
-    mu[i][1] = ifactor*(field[1] + mu_local[i][1]);
-    mu[i][2] = ifactor*(field[2] + mu_local[i][2]);
+    mu[i][0] = ifactor*(field[0] + local_field[i][0]);
+    mu[i][1] = ifactor*(field[1] + local_field[i][1]);
+    mu[i][2] = ifactor*(field[2] + local_field[i][2]);
     mu[i][3] = sqrt(mu[i][0]*mu[i][0] + mu[i][1]*mu[i][1] + mu[i][2]*mu[i][2]);
     ne_local += 0.5*(mu[i][3]*mu[i][3]);
   }
 
   comm->forward_comm_pair(this);
-
   MPI_Allreduce(&ne_local, &ne, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
   double criterion = fabs((ne-scf_energy)/scf_energy);
@@ -693,10 +740,11 @@ int PairLJCutInducedDipoleCutMemory::update_dipoles()
 
   if (converged) {
     m=0;
-    while (m<atom->nlocal) {
+    while (m<inum) {
       itype = type[m];
       ifactor = factor[itype][itype];
       ienergy = 0.5*ifactor*field[component]*field[component] - 0.5*mu[m][component]*field[component];
+
       if (oscillating) ienergy /= 3.0;
       if (evflag) ev_tally_xyz(m,m,nlocal,newton_pair,0.0,ienergy,0.0,0.0,0.0,0.0,0.0,0.0);
       m++;

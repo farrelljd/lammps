@@ -29,7 +29,6 @@ class PairLJCutInducedDipoleCutMemory : public Pair {
   PairLJCutInducedDipoleCutMemory(class LAMMPS *);
   virtual ~PairLJCutInducedDipoleCutMemory();
   virtual void compute(int, int);
-  void compute_forces(int, int);
   void settings(int, char **);
   void coeff(int, char **);
   void init_style();
@@ -51,7 +50,7 @@ class PairLJCutInducedDipoleCutMemory : public Pair {
   double **cut_coul,**cut_coulsq;
   double **epsilon,**sigma, **factor;
   double **lj1,**lj2,**lj3,**lj4,**offset;
-  double **distances;
+  double ***distances;
 
   int nmax, iterstep, simstep, component;
   double scf_energy;
@@ -62,6 +61,8 @@ class PairLJCutInducedDipoleCutMemory : public Pair {
 
  private:
   int update_dipoles();
+  void compute_distances();
+  void compute_forces(int, int);
 };
 
 }
