@@ -13,21 +13,21 @@
 
 #ifdef PAIR_CLASS
 
-PairStyle(lj/cut/induced-dipole/cut,PairLJCutInducedDipoleCut)
+PairStyle(lj/cut/induced-dipole/cut/memory,PairLJCutInducedDipoleCutMemory)
 
 #else
 
-#ifndef LMP_PAIR_LJ_CUT_INDUCED_DIPOLE_CUT_H
-#define LMP_PAIR_LJ_CUT_INDUCED_DIPOLE_CUT_H
+#ifndef LMP_PAIR_LJ_CUT_INDUCED_DIPOLE_CUT_MEMORY_H
+#define LMP_PAIR_LJ_CUT_INDUCED_DIPOLE_CUT_MEMORY_H
 
 #include "pair.h"
 
 namespace LAMMPS_NS {
 
-class PairLJCutInducedDipoleCut : public Pair {
+class PairLJCutInducedDipoleCutMemory : public Pair {
  public:
-  PairLJCutInducedDipoleCut(class LAMMPS *);
-  virtual ~PairLJCutInducedDipoleCut();
+  PairLJCutInducedDipoleCutMemory(class LAMMPS *);
+  virtual ~PairLJCutInducedDipoleCutMemory();
   virtual void compute(int, int);
   void compute_forces(int, int);
   void settings(int, char **);
@@ -51,6 +51,7 @@ class PairLJCutInducedDipoleCut : public Pair {
   double **cut_coul,**cut_coulsq;
   double **epsilon,**sigma, **factor;
   double **lj1,**lj2,**lj3,**lj4,**offset;
+  double **distances;
 
   int nmax, iterstep, simstep, component;
   double scf_energy;

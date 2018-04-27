@@ -13,7 +13,7 @@
 
 #include <math.h>
 #include <stdlib.h>
-#include "pair_lj_cut_induced_dipole_cut.h"
+#include "pair_lj_cut_induced_dipole_cut_memory.h"
 #include "atom.h"
 #include "neighbor.h"
 #include "neigh_list.h"
@@ -29,7 +29,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-PairLJCutInducedDipoleCut::PairLJCutInducedDipoleCut(LAMMPS *lmp) : Pair(lmp)
+PairLJCutInducedDipoleCutMemory::PairLJCutInducedDipoleCutMemory(LAMMPS *lmp) : Pair(lmp)
 {
   single_enable = 0;
   nmax = atom-> nmax;
@@ -40,7 +40,7 @@ PairLJCutInducedDipoleCut::PairLJCutInducedDipoleCut(LAMMPS *lmp) : Pair(lmp)
 
 /* ---------------------------------------------------------------------- */
 
-PairLJCutInducedDipoleCut::~PairLJCutInducedDipoleCut()
+PairLJCutInducedDipoleCutMemory::~PairLJCutInducedDipoleCutMemory()
 {
   if (allocated) {
     memory->destroy(setflag);
@@ -65,10 +65,24 @@ PairLJCutInducedDipoleCut::~PairLJCutInducedDipoleCut()
 
 /* ---------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::compute(int eflag, int vflag)
+void PairLJCutInducedDipoleCutMemory::compute(int eflag, int vflag)
 {
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = vflag_fdotr = 0;
+
+  int i,ii,jj,inum,jnum;
+  int *ilist,*jlist,*numneigh,**firstneigh;
+
+  inum = list->inum;
+  ilist = list->ilist;
+  numneigh = list->numneigh;
+  int max_jnum = 0;
+
+  for (ii = 0; ii < inum; ii++) {
+    i = ilist[ii];
+    jnum = numneigh[i];
+    max_jnum = std::max(max_jnum, jnum);
+  }
 
   // self-consistently determine induced dipoles
   simstep++;
@@ -113,14 +127,15 @@ void PairLJCutInducedDipoleCut::compute(int eflag, int vflag)
     compute_forces(eflag, vflag);
     wpot+=scf_energy;
   }
-  // if ((comm->me==0) && (simstep-1) % 1 == 0) fprintf(screen,"scf_energy:%20.15f\n",wpot);
-
   if (vflag_fdotr) virial_fdotr_compute();
+
+  memory->create(distances,inum+1,jnum+1,"pair:distances");
+  memory->destroy(distances);
 }
 
 /* ---------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::compute_forces(int eflag, int vflag)
+void PairLJCutInducedDipoleCutMemory::compute_forces(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,ecoul,fx,fy,fz;
@@ -166,8 +181,6 @@ void PairLJCutInducedDipoleCut::compute_forces(int eflag, int vflag)
     i = ilist[0];
     jlist = firstneigh[i];
     j = jlist[0];
-    // include the scf energy as a fictional particle-particle energy
-    if (evflag) ev_tally_xyz(i,j,nlocal,1,0.0,scf_energy,0.0,0.0,0.0,0.0,0.0,0.0);
   }
 
   for (ii = 0; ii < inum; ii++) {
@@ -240,7 +253,7 @@ void PairLJCutInducedDipoleCut::compute_forces(int eflag, int vflag)
         fy = fq*forcecouly + dely*forcelj;
         fz = fq*forcecoulz + delz*forcelj;
 
-        // force & torque accumulation
+        // force accumulation
 
         f[i][0] += fx;
         f[i][1] += fy;
@@ -253,15 +266,6 @@ void PairLJCutInducedDipoleCut::compute_forces(int eflag, int vflag)
         }
 
         if (eflag) {
-//          if (rsq < cut_coulsq[itype][jtype]) {
-//            if (rsq < cut_ljsq[itype][jtype]) {
-//              r3inv = cut_ljsq3inv[itype][jtype];
-//              r5inv = r3inv*r2inv;
-//            }
-//            ecoul = r3inv*pdotp - 3.0*r5inv*pidotr*pjdotr;
-//            ecoul *= factor_coul*qqrd2e;
-//          } else ecoul = 0.0;
-
           if (rsq < cut_ljsq[itype][jtype] && (!oscillating || component==X_COMPONENT) ) {
             evdwl = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]) -
               offset[itype][jtype];
@@ -281,7 +285,7 @@ void PairLJCutInducedDipoleCut::compute_forces(int eflag, int vflag)
    allocate all arrays
 ------------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::allocate()
+void PairLJCutInducedDipoleCutMemory::allocate()
 {
   allocated = 1;
   int n = atom->ntypes;
@@ -313,7 +317,7 @@ void PairLJCutInducedDipoleCut::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::settings(int narg, char **arg)
+void PairLJCutInducedDipoleCutMemory::settings(int narg, char **arg)
 {
   if (narg < 6 || narg > 7)
     error->all(FLERR,"Incorrect args in pair_style command");
@@ -354,7 +358,7 @@ void PairLJCutInducedDipoleCut::settings(int narg, char **arg)
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::coeff(int narg, char **arg)
+void PairLJCutInducedDipoleCutMemory::coeff(int narg, char **arg)
 {
   if (narg < 4 || narg > 6)
     error->all(FLERR,"Incorrect args for pair coefficients");
@@ -392,7 +396,7 @@ void PairLJCutInducedDipoleCut::coeff(int narg, char **arg)
    init specific to this pair style
 ------------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::init_style()
+void PairLJCutInducedDipoleCutMemory::init_style()
 {
   if (!atom->mu_flag || !atom->mu_x_flag || !atom->mu_y_flag || !atom->mu_z_flag)
     error->all(FLERR,"Pair lj/cut/induced-dipole/cut requires atom attributes mu, mu_x, mu_y, mu_z");
@@ -403,7 +407,7 @@ void PairLJCutInducedDipoleCut::init_style()
    init for one type pair i,j and corresponding j,i
 ------------------------------------------------------------------------- */
 
-double PairLJCutInducedDipoleCut::init_one(int i, int j)
+double PairLJCutInducedDipoleCutMemory::init_one(int i, int j)
 {
   if (setflag[i][j] == 0) {
     epsilon[i][j] = mix_energy(epsilon[i][i],epsilon[j][j],
@@ -446,7 +450,7 @@ double PairLJCutInducedDipoleCut::init_one(int i, int j)
    proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::write_restart(FILE *fp)
+void PairLJCutInducedDipoleCutMemory::write_restart(FILE *fp)
 {
   write_restart_settings(fp);
 
@@ -468,7 +472,7 @@ void PairLJCutInducedDipoleCut::write_restart(FILE *fp)
    proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::read_restart(FILE *fp)
+void PairLJCutInducedDipoleCutMemory::read_restart(FILE *fp)
 {
   read_restart_settings(fp);
 
@@ -501,7 +505,7 @@ void PairLJCutInducedDipoleCut::read_restart(FILE *fp)
    proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::write_restart_settings(FILE *fp)
+void PairLJCutInducedDipoleCutMemory::write_restart_settings(FILE *fp)
 {
   fwrite(&cut_lj_global,sizeof(double),1,fp);
   fwrite(&cut_coul_global,sizeof(double),1,fp);
@@ -513,7 +517,7 @@ void PairLJCutInducedDipoleCut::write_restart_settings(FILE *fp)
    proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::read_restart_settings(FILE *fp)
+void PairLJCutInducedDipoleCutMemory::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
     fread(&cut_lj_global,sizeof(double),1,fp);
@@ -529,11 +533,11 @@ void PairLJCutInducedDipoleCut::read_restart_settings(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-int PairLJCutInducedDipoleCut::update_dipoles()
+int PairLJCutInducedDipoleCutMemory::update_dipoles()
 {
   int converged;
   int i,j,ii,jj,inum,jnum,itype,jtype;
-  double xtmp,ytmp,ztmp,delx,dely,delz,ecoul,fx,fy,fz,fjx,fjy,fjz;
+  double xtmp,ytmp,ztmp,delx,dely,delz,ecoul,fx,fy,fz,fjx,fjy,fjz,ifactor,ienergy;
   double rsq,rinv,r2inv,r6inv,r3inv,r5inv;
   double forcecoulx,forcecouly,forcecoulz,forcecouljx,forcecouljy,forcecouljz;
   double fq,pidotr,pjdotr,pre1,pre2;
@@ -666,7 +670,7 @@ int PairLJCutInducedDipoleCut::update_dipoles()
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
     itype = type[i];
-    double ifactor = factor[itype][itype];
+    ifactor = factor[itype][itype];
     mu[i][0] = ifactor*(field[0] + mu_local[i][0]);
     mu[i][1] = ifactor*(field[1] + mu_local[i][1]);
     mu[i][2] = ifactor*(field[2] + mu_local[i][2]);
@@ -688,20 +692,15 @@ int PairLJCutInducedDipoleCut::update_dipoles()
   }
 
   if (converged) {
-    double field_energy_local = 0.0;
     m=0;
     while (m<atom->nlocal) {
       itype = type[m];
-      double ifactor = factor[itype][itype];
-      // field_energy_local -= factor[itype]*mu[m][component];
-      field_energy_local += 0.5*ifactor*field[component]*field[component] - 0.5*mu[m][component]*field[component];
-      // fprintf(screen,"dipole%10i%20.5f%20.5f%20.5f\n", m, mu[m][0],mu[m][1],mu[m][2]);
+      ifactor = factor[itype][itype];
+      ienergy = 0.5*ifactor*field[component]*field[component] - 0.5*mu[m][component]*field[component];
+      if (oscillating) ienergy /= 3.0;
+      if (evflag) ev_tally_xyz(m,m,nlocal,newton_pair,0.0,ienergy,0.0,0.0,0.0,0.0,0.0,0.0);
       m++;
     }
-    MPI_Allreduce(&field_energy_local, &scf_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    // relative interaction energy per dipole
-    if (oscillating) scf_energy/=3.0;
-
   }
 
   return converged;
@@ -709,7 +708,7 @@ int PairLJCutInducedDipoleCut::update_dipoles()
 
 /* ---------------------------------------------------------------------- */
 
-int PairLJCutInducedDipoleCut::pack_forward_comm(int n, int *list, double *buf,
+int PairLJCutInducedDipoleCutMemory::pack_forward_comm(int n, int *list, double *buf,
                                int pbc_flag, int *pbc)
 {
   int i,j,m;
@@ -738,7 +737,7 @@ int PairLJCutInducedDipoleCut::pack_forward_comm(int n, int *list, double *buf,
 
 /* ---------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::unpack_forward_comm(int n, int first, double *buf)
+void PairLJCutInducedDipoleCutMemory::unpack_forward_comm(int n, int first, double *buf)
 {
   int i,m,last;
   double **mu;
@@ -765,7 +764,7 @@ void PairLJCutInducedDipoleCut::unpack_forward_comm(int n, int first, double *bu
 
 /* ---------------------------------------------------------------------- */
 
-int PairLJCutInducedDipoleCut::pack_reverse_comm(int n, int first, double *buf)
+int PairLJCutInducedDipoleCutMemory::pack_reverse_comm(int n, int first, double *buf)
 {
   int i,m,last;
   double **mu_local = atom->mu;
@@ -782,7 +781,7 @@ int PairLJCutInducedDipoleCut::pack_reverse_comm(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void PairLJCutInducedDipoleCut::unpack_reverse_comm(int n, int *list, double *buf)
+void PairLJCutInducedDipoleCutMemory::unpack_reverse_comm(int n, int *list, double *buf)
 {
   int i,j,m;
   double **mu_local = atom->mu;
@@ -801,7 +800,7 @@ void PairLJCutInducedDipoleCut::unpack_reverse_comm(int n, int *list, double *bu
    memory usage of local atom-based arrays
 ------------------------------------------------------------------------- */
 
-//double PairLJCutInducedDipoleCut::memory_usage()
+//double PairLJCutInducedDipoleCutMemory::memory_usage()
 //{
 //  double bytes = 1000 * nmax * sizeof(double);
 //  return bytes;
