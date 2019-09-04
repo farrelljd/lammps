@@ -75,7 +75,7 @@ void PairLJCutAdress::compute(int eflag, int vflag)
 
   double **x = atom->x;
   double **f = atom->f;
-//  double **w = atom->w;
+  double *w = atom->adw;
   int *type = atom->type;
   int nlocal = atom->nlocal;
   double *special_lj = force->special_lj;
@@ -113,7 +113,16 @@ void PairLJCutAdress::compute(int eflag, int vflag)
         r6inv = r2inv*r2inv*r2inv;
         forcelj = r6inv * (lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
         fpair = factor_lj*forcelj*r2inv;
-        force_tally(i,j,nlocal,newton_pair,fpair,delx,dely,delz,f);
+
+        if (atom->adress_flag == 1) fpair *= w[i]*w[j];
+        f[i][0] += delx*fpair;
+        f[i][1] += dely*fpair;
+        f[i][2] += delz*fpair;
+        if (newton_pair || j < nlocal) {
+          f[j][0] -= delx*fpair;
+          f[j][1] -= dely*fpair;
+          f[j][2] -= delz*fpair;
+        }
 
         if (eflag) {
           evdwl = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]) -
