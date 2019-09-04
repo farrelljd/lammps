@@ -189,6 +189,10 @@ Atom::Atom(LAMMPS *lmp) : Pointers(lmp)
   eff_plastic_strain_rate_flag = 0;
   damage_flag = 0;
 
+  // USER-ADRESS
+
+  adress_flag = 0;
+
   // Peridynamic scale factor
 
   pdscale = 1.0;
@@ -437,6 +441,10 @@ void Atom::create_avec(const char *style, int narg, char **arg, int trysuffix)
   cs_flag = csforce_flag = vforce_flag = etag_flag = 0;
 
   rho_flag = e_flag = cv_flag = vest_flag = 0;
+
+  // USER-ADRESS
+
+  adress_flag = 0;
 
   // create instance of AtomVec
   // use grow() to initialize atom-based arrays to length 1

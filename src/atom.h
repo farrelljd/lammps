@@ -71,6 +71,10 @@ class Atom : protected Pointers {
   double **fm;
   double **fm_long;
 
+  // USER-ADRESS package
+
+  double *adw;
+
   // PERI package
 
   double *vfrac,*s0;
@@ -170,6 +174,10 @@ class Atom : protected Pointers {
   int eff_plastic_strain_flag;
   int eff_plastic_strain_rate_flag;
   int damage_flag;
+
+  // USER-ADRESS
+
+  int adress_flag;
 
   // Peridynamics scale factor, used by dump cfg
 
