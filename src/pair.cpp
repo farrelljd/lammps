@@ -1763,3 +1763,22 @@ double Pair::memory_usage()
   return bytes;
 }
 
+/**
+ **/
+
+void Pair::force_tally(int i, int j, int nlocal, int newton_pair,
+		       double fpair, double delx, double dely, double delz,
+		       double **f)
+{
+  if (newton_pair || i < nlocal) {
+    f[i][0] += delx*fpair;
+    f[i][1] += dely*fpair;
+    f[i][2] += delz*fpair;
+  }
+  if (newton_pair || j < nlocal) {
+    f[j][0] -= delx*fpair;
+    f[j][1] -= dely*fpair;
+    f[j][2] -= delz*fpair;
+  }
+}
+

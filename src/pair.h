@@ -134,6 +134,8 @@ class Pair : protected Pointers {
                 double *, double *, double *);
   void ev_tally_xyz(int, int, int, int, double, double,
                     double, double, double, double, double, double);
+  void force_tally(int, int, int, int, double, double, double, double,
+		   double **);
 
   // general child-class methods
 
