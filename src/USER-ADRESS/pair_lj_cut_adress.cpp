@@ -90,6 +90,7 @@ void PairLJCutAdress::compute(int eflag, int vflag)
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
+    if (atom->adress_flag == 1 && w[i] == 0.0) continue;
     xtmp = x[i][0];
     ytmp = x[i][1];
     ztmp = x[i][2];
@@ -101,6 +102,7 @@ void PairLJCutAdress::compute(int eflag, int vflag)
       j = jlist[jj];
       factor_lj = special_lj[sbmask(j)];
       j &= NEIGHMASK;
+      if (atom->adress_flag == 1 && w[j] == 0.0) continue;
 
       delx = xtmp - x[j][0];
       dely = ytmp - x[j][1];

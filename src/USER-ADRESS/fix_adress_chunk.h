@@ -31,20 +31,18 @@ class FixAdressChunk : public Fix {
   int setmask();
   void init();
   void setup(int);
-  void min_setup(int);
-  void post_force(int);
-  void post_force_respa(int, int, int);
-  void min_post_force(int);
-  double compute_scalar();
+  void post_integrate();
+  void post_integrate_respa(int, int);
+//  void post_force(int);
+//  void post_force_respa(int, int, int);
 
  private:
   int ilevel_respa;
-  double k_spring;
-  double esprings;
+  double r_explicit, r_coarsegr;
   char *idchunk,*idcom;
 
   int nchunk;
-  double **com0,**fcom;
+  double *com0,*chunkw,**fcom;
 
   class ComputeChunkAtom *cchunk;
   class ComputeCOMChunk *ccom;

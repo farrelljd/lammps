@@ -23,9 +23,13 @@
 #include "compute_com_chunk.h"
 #include "memory.h"
 #include "error.h"
+#include "domain.h"
+#include "math.h"
+#include "math_const.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
+using namespace MathConst;
 
 #define SMALL 1.0e-10
 
@@ -35,7 +39,8 @@ FixAdressChunk::FixAdressChunk(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
   idchunk(NULL), idcom(NULL), com0(NULL), fcom(NULL)
 {
-  if (narg != 6) error->all(FLERR,"Illegal fix spring/chunk command");
+  if (atom->adress_flag != 1) error->all(FLERR,"fix adress/chunk requires the adress atom style");
+  if (narg != 7) error->all(FLERR,"Illegal fix adress/chunk command");
 
   scalar_flag = 1;
   global_freq = 1;
@@ -43,17 +48,17 @@ FixAdressChunk::FixAdressChunk(LAMMPS *lmp, int narg, char **arg) :
   respa_level_support = 1;
   ilevel_respa = 0;
 
-  k_spring = force->numeric(FLERR,arg[3]);
+  r_explicit = force->numeric(FLERR,arg[3]);
+  r_coarsegr = force->numeric(FLERR,arg[4]);
 
-  int n = strlen(arg[4]) + 1;
+  int n = strlen(arg[5]) + 1;
   idchunk = new char[n];
-  strcpy(idchunk,arg[4]);
+  strcpy(idchunk,arg[5]);
 
-  n = strlen(arg[5]) + 1;
+  n = strlen(arg[6]) + 1;
   idcom = new char[n];
-  strcpy(idcom,arg[5]);
+  strcpy(idcom,arg[6]);
 
-  esprings = 0.0;
   nchunk = 0;
 }
 
@@ -62,6 +67,7 @@ FixAdressChunk::FixAdressChunk(LAMMPS *lmp, int narg, char **arg) :
 FixAdressChunk::~FixAdressChunk()
 {
   memory->destroy(com0);
+  memory->destroy(chunkw);
   memory->destroy(fcom);
 
   // decrement lock counter in compute chunk/atom, it if still exists
@@ -82,10 +88,10 @@ FixAdressChunk::~FixAdressChunk()
 int FixAdressChunk::setmask()
 {
   int mask = 0;
-  mask |= POST_FORCE;
-  mask |= THERMO_ENERGY;
-  mask |= POST_FORCE_RESPA;
-  mask |= MIN_POST_FORCE;
+  // mask |= POST_FORCE;
+  // mask |= POST_FORCE_RESPA;
+  mask |= POST_INTEGRATE;
+  mask |= POST_INTEGRATE_RESPA;
   return mask;
 }
 
@@ -97,17 +103,17 @@ void FixAdressChunk::init()
 
   int icompute = modify->find_compute(idchunk);
   if (icompute < 0)
-    error->all(FLERR,"Chunk/atom compute does not exist for fix spring/chunk");
+    error->all(FLERR,"Chunk/atom compute does not exist for fix adress/chunk");
   cchunk = (ComputeChunkAtom *) modify->compute[icompute];
   if (strcmp(cchunk->style,"chunk/atom") != 0)
-    error->all(FLERR,"Fix spring/chunk does not use chunk/atom compute");
+    error->all(FLERR,"Fix adress/chunk does not use chunk/atom compute");
 
   icompute = modify->find_compute(idcom);
   if (icompute < 0)
-    error->all(FLERR,"Com/chunk compute does not exist for fix spring/chunk");
+    error->all(FLERR,"Com/chunk compute does not exist for fix adress/chunk");
   ccom = (ComputeCOMChunk *) modify->compute[icompute];
   if (strcmp(ccom->style,"com/chunk") != 0)
-    error->all(FLERR,"Fix spring/chunk does not use com/chunk compute");
+    error->all(FLERR,"Fix adress/chunk does not use com/chunk compute");
 
   // check that idchunk is consistent with ccom->idchunk
 
@@ -124,35 +130,21 @@ void FixAdressChunk::init()
 
 void FixAdressChunk::setup(int vflag)
 {
-  if (strstr(update->integrate_style,"verlet"))
-    post_force(vflag);
-  else {
-    ((Respa *) update->integrate)->copy_flevel_f(ilevel_respa);
-    post_force_respa(vflag,ilevel_respa,0);
-    ((Respa *) update->integrate)->copy_f_flevel(ilevel_respa);
-  }
+//  if (strstr(update->integrate_style,"verlet"))
+//    post_force(vflag);
+//  else {
+//    ((Respa *) update->integrate)->copy_flevel_f(ilevel_respa);
+//    post_force_respa(vflag,ilevel_respa,0);
+//    ((Respa *) update->integrate)->copy_f_flevel(ilevel_respa);
+//  }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixAdressChunk::min_setup(int vflag)
-{
-  post_force(vflag);
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixAdressChunk::post_force(int /*vflag*/)
+void FixAdressChunk::post_integrate()
 {
   int i,m;
   double dx,dy,dz,r;
-
-  // check if first time cchunk will be queried via ccom
-  // if so, lock idchunk for as long as this fix is in place
-  // will be unlocked in destructor
-  // necessary b/c this fix stores original COM
-
-  if (com0 == NULL) cchunk->lock(this,update->ntimestep,-1);
 
   // calculate current centers of mass for each chunk
   // extract pointers from idchunk and idcom
@@ -164,88 +156,51 @@ void FixAdressChunk::post_force(int /*vflag*/)
   double *masstotal = ccom->masstotal;
   double **com = ccom->array;
 
-  // check if first time cchunk was queried via ccom
-  // if so, allocate com0,fcom and store initial COM
+  if (com0 == NULL) cchunk->lock(this,update->ntimestep,-1);
 
   if (com0 == NULL) {
-    memory->create(com0,nchunk,3,"spring/chunk:com0");
-    memory->create(fcom,nchunk,3,"spring/chunk:fcom");
-
-    for (m = 0; m < nchunk; m++) {
-      com0[m][0] = com[m][0];
-      com0[m][1] = com[m][1];
-      com0[m][2] = com[m][2];
-    }
+    memory->create(com0,3,"adress/chunk:com0");
+    memory->create(chunkw,nchunk,"adress/chunk:chunkw");
+    memory->create(fcom,nchunk,3,"adress/chunk:fcom");
   }
 
-  // calculate fcom = force on each COM, divided by masstotal
+  com0[0] = (domain->boxlo[0]+domain->boxhi[0])/2;
+  com0[1] = (domain->boxlo[1]+domain->boxhi[1])/2;
+  com0[2] = (domain->boxlo[2]+domain->boxhi[2])/2;
+    
+  // calculate the AdResS weight for each chunk
 
-  esprings = 0.0;
-  for (m = 0; m < nchunk; m++) {
-    dx = com[m][0] - com0[m][0];
-    dy = com[m][1] - com0[m][1];
-    dz = com[m][2] - com0[m][2];
-    r = sqrt(dx*dx + dy*dy + dz*dz);
-    r = MAX(r,SMALL);
-
-    if (masstotal[m]) {
-      fcom[m][0] = k_spring*dx/r / masstotal[m];
-      fcom[m][1] = k_spring*dy/r / masstotal[m];
-      fcom[m][2] = k_spring*dz/r / masstotal[m];
-      esprings += 0.5*k_spring*r*r;
-    }
-  }
-
-  // apply restoring force to atoms in each chunk
-
-  double **f = atom->f;
-  int *type = atom->type;
-  double *mass = atom->mass;
-  double *rmass = atom->rmass;
   int nlocal = atom->nlocal;
+  double *w = atom->adw;
 
-  double massone;
-
-  if (rmass) {
-    for (i = 0; i < nlocal; i++) {
-      m = ichunk[i]-1;
-      if (m < 0) continue;
-      massone = rmass[i];
-      f[i][0] -= fcom[m][0]*massone;
-      f[i][1] -= fcom[m][1]*massone;
-      f[i][2] -= fcom[m][2]*massone;
-    }
-  } else {
-    for (i = 0; i < nlocal; i++) {
-      m = ichunk[i]-1;
-      if (m < 0) continue;
-      massone = mass[type[i]];
-      f[i][0] -= fcom[m][0]*massone;
-      f[i][1] -= fcom[m][1]*massone;
-      f[i][2] -= fcom[m][2]*massone;
+  for (m = 0; m < nchunk; m++) {
+    dx = com[m][0] - com0[0];
+    dy = com[m][1] - com0[1];
+    dz = com[m][2] - com0[2];
+    r = sqrt(dx*dx + dy*dy + dz*dz);
+    if (r < r_explicit) {
+      chunkw[m] = 1.0;
+    } else if (r > r_coarsegr) {
+      chunkw[m] = 0.0;
+    } else {
+      chunkw[m] = cos(MY_PI/(2*r_coarsegr)*(r-r_explicit));
+      chunkw[m] *= chunkw[m];
     }
   }
+
+  // inform the chunklets
+
+  for (i = 0; i < nlocal; i++) {
+    m = ichunk[i]-1;
+    if (m < 0) continue;
+    w[i] = chunkw[m];
+  }
+
 }
 
 /* ---------------------------------------------------------------------- */
-
-void FixAdressChunk::post_force_respa(int vflag, int ilevel, int /*iloop*/)
+void FixAdressChunk::post_integrate_respa(int ilevel, int /*iloop*/)
 {
-  if (ilevel == ilevel_respa) post_force(vflag);
+  if (ilevel == ilevel_respa) post_integrate();
 }
 
-/* ---------------------------------------------------------------------- */
-
-void FixAdressChunk::min_post_force(int vflag)
-{
-  post_force(vflag);
-}
-
-/* ----------------------------------------------------------------------
-   energy of stretched spring
-------------------------------------------------------------------------- */
-
-double FixAdressChunk::compute_scalar()
-{
-  return esprings;
-}
