@@ -62,6 +62,7 @@ class AtomVecAdress : public AtomVec {
   int *type,*mask;
   imageint *image;
   double **x,**v,**f;
+  int *res;
   double *adw;
 };
 
