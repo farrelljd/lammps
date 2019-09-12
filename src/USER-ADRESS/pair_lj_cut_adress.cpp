@@ -75,7 +75,9 @@ void PairLJCutAdress::compute(int eflag, int vflag)
 
   double **x = atom->x;
   double **f = atom->f;
-  double *w = atom->adw;
+  double **w = atom->adw;
+  double *mass = atom->mass;
+  int *res = atom->res;
   int *type = atom->type;
   int nlocal = atom->nlocal;
   double *special_lj = force->special_lj;
@@ -85,12 +87,13 @@ void PairLJCutAdress::compute(int eflag, int vflag)
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
+  jtype=0;
 
   // loop over neighbors of my atoms
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
-    if (atom->adress_flag == 1 && w[i] == 0.0) continue;
+    // if (atom->adress_flag == 1 && w[i][3] == 0.0) continue;
     xtmp = x[i][0];
     ytmp = x[i][1];
     ztmp = x[i][2];
@@ -102,13 +105,14 @@ void PairLJCutAdress::compute(int eflag, int vflag)
       j = jlist[jj];
       factor_lj = special_lj[sbmask(j)];
       j &= NEIGHMASK;
-      if (atom->adress_flag == 1 && w[j] == 0.0) continue;
+      // if (atom->adress_flag == 1 && w[j][3] == 0.0) continue;
 
       delx = xtmp - x[j][0];
       dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
       rsq = delx*delx + dely*dely + delz*delz;
       jtype = type[j];
+      fprintf(screen, "proc %d: %d(%d, %d, %.5f), %d(%d, %d, %.5f)\n", comm->me, i, itype, res[i], w[i][3], j, jtype, res[j], w[j][3]);
 
       if (rsq < cutsq[itype][jtype]) {
         r2inv = 1.0/rsq;
@@ -116,7 +120,7 @@ void PairLJCutAdress::compute(int eflag, int vflag)
         forcelj = r6inv * (lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
         fpair = factor_lj*forcelj*r2inv;
 
-        if (atom->adress_flag == 1) fpair *= w[i]*w[j];
+        // if (atom->adress_flag == 1) fpair *= w[i][3]*w[j][3];
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
