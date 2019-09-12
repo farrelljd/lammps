@@ -12,6 +12,7 @@
 ------------------------------------------------------------------------- */
 
 #include "atom_vec_adress.h"
+#include <cmath>
 #include "atom.h"
 #include "comm.h"
 #include "domain.h"
@@ -30,12 +31,13 @@ AtomVecAdress::AtomVecAdress(LAMMPS *lmp) : AtomVec(lmp)
   molecular = 0;
   mass_type = 1;
 
-  comm_x_only = comm_f_only = 1;
-  size_forward = 3;
+  comm_x_only = 0;
+  comm_f_only = 1;
+  size_forward = 6;
   size_reverse = 3;
-  size_border = 8;
+  size_border = 11;
   size_velocity = 3;
-  size_data_atom = 7;
+  size_data_atom = 9;
   size_data_vel = 4;
   xcol_data = 4;
 
@@ -65,7 +67,7 @@ void AtomVecAdress::grow(int n)
   f = memory->grow(atom->f,nmax*comm->nthreads,3,"atom:f");
 
   res = memory->grow(atom->res,nmax,"atom:res");
-  adw = memory->grow(atom->adw,nmax,"atom:adw");
+  adw = memory->grow(atom->adw,nmax,4,"atom:adw");
 
   if (atom->nextra_grow)
     for (int iextra = 0; iextra < atom->nextra_grow; iextra++)
@@ -81,8 +83,7 @@ void AtomVecAdress::grow_reset()
   tag = atom->tag; type = atom->type;
   mask = atom->mask; image = atom->image;
   x = atom->x; v = atom->v; f = atom->f;
-  res = atom->res;
-  adw = atom->adw;
+  res = atom->res; adw = atom->adw;
 }
 
 /* ----------------------------------------------------------------------
@@ -103,7 +104,10 @@ void AtomVecAdress::copy(int i, int j, int delflag)
   v[j][2] = v[i][2];
 
   res[j] = res[i];
-  adw[j] = adw[i];
+  adw[j][0] = adw[i][0];
+  adw[j][1] = adw[i][1];
+  adw[j][2] = adw[i][2];
+  adw[j][3] = adw[i][3];
 
   if (atom->nextra_grow)
     for (int iextra = 0; iextra < atom->nextra_grow; iextra++)
@@ -125,6 +129,9 @@ int AtomVecAdress::pack_comm(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+      buf[m++] = adw[j][0];
+      buf[m++] = adw[j][1];
+      buf[m++] = adw[j][2];
     }
   } else {
     if (domain->triclinic == 0) {
@@ -141,6 +148,9 @@ int AtomVecAdress::pack_comm(int n, int *list, double *buf,
       buf[m++] = x[j][0] + dx;
       buf[m++] = x[j][1] + dy;
       buf[m++] = x[j][2] + dz;
+      buf[m++] = adw[j][0];
+      buf[m++] = adw[j][1];
+      buf[m++] = adw[j][2];
     }
   }
   return m;
@@ -161,6 +171,9 @@ int AtomVecAdress::pack_comm_vel(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+      buf[m++] = adw[j][0];
+      buf[m++] = adw[j][1];
+      buf[m++] = adw[j][2];
       buf[m++] = v[j][0];
       buf[m++] = v[j][1];
       buf[m++] = v[j][2];
@@ -181,6 +194,9 @@ int AtomVecAdress::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        buf[m++] = adw[j][0];
+        buf[m++] = adw[j][1];
+        buf[m++] = adw[j][2];
         buf[m++] = v[j][0];
         buf[m++] = v[j][1];
         buf[m++] = v[j][2];
@@ -194,6 +210,9 @@ int AtomVecAdress::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        buf[m++] = adw[j][0];
+        buf[m++] = adw[j][1];
+        buf[m++] = adw[j][2];
         if (mask[i] & deform_groupbit) {
           buf[m++] = v[j][0] + dvx;
           buf[m++] = v[j][1] + dvy;
@@ -211,6 +230,22 @@ int AtomVecAdress::pack_comm_vel(int n, int *list, double *buf,
 
 /* ---------------------------------------------------------------------- */
 
+int AtomVecAdress::pack_comm_hybrid(int n, int *list, double *buf)
+{
+  int i,j,m;
+
+  m = 0;
+  for (i = 0; i < n; i++) {
+    j = list[i];
+    buf[m++] = adw[j][0];
+    buf[m++] = adw[j][1];
+    buf[m++] = adw[j][2];
+  }
+  return m;
+}
+
+/* ---------------------------------------------------------------------- */
+
 void AtomVecAdress::unpack_comm(int n, int first, double *buf)
 {
   int i,m,last;
@@ -221,6 +256,9 @@ void AtomVecAdress::unpack_comm(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    adw[i][0] = buf[m++];
+    adw[i][1] = buf[m++];
+    adw[i][2] = buf[m++];
   }
 }
 
@@ -236,10 +274,29 @@ void AtomVecAdress::unpack_comm_vel(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    adw[i][0] = buf[m++];
+    adw[i][1] = buf[m++];
+    adw[i][2] = buf[m++];
     v[i][0] = buf[m++];
     v[i][1] = buf[m++];
     v[i][2] = buf[m++];
   }
+}
+
+/* ---------------------------------------------------------------------- */
+
+int AtomVecAdress::unpack_comm_hybrid(int n, int first, double *buf)
+{
+  int i,m,last;
+
+  m = 0;
+  last = first + n;
+  for (i = first; i < last; i++) {
+    adw[i][0] = buf[m++];
+    adw[i][1] = buf[m++];
+    adw[i][2] = buf[m++];
+  }
+  return m;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -292,7 +349,10 @@ int AtomVecAdress::pack_border(int n, int *list, double *buf,
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
       buf[m++] = ubuf(res[j]).d;
-      buf[m++] = adw[j];
+      buf[m++] = adw[j][0];
+      buf[m++] = adw[j][1];
+      buf[m++] = adw[j][2];
+      buf[m++] = adw[j][3];
     }
   } else {
     if (domain->triclinic == 0) {
@@ -313,7 +373,10 @@ int AtomVecAdress::pack_border(int n, int *list, double *buf,
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
       buf[m++] = ubuf(res[j]).d;
-      buf[m++] = adw[j];
+      buf[m++] = adw[j][0];
+      buf[m++] = adw[j][1];
+      buf[m++] = adw[j][2];
+      buf[m++] = adw[j][3];
     }
   }
 
@@ -343,7 +406,10 @@ int AtomVecAdress::pack_border_vel(int n, int *list, double *buf,
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
       buf[m++] = ubuf(res[j]).d;
-      buf[m++] = adw[j];
+      buf[m++] = adw[j][0];
+      buf[m++] = adw[j][1];
+      buf[m++] = adw[j][2];
+      buf[m++] = adw[j][3];
       buf[m++] = v[j][0];
       buf[m++] = v[j][1];
       buf[m++] = v[j][2];
@@ -368,7 +434,10 @@ int AtomVecAdress::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = ubuf(type[j]).d;
         buf[m++] = ubuf(mask[j]).d;
         buf[m++] = ubuf(res[j]).d;
-        buf[m++] = adw[j];
+        buf[m++] = adw[j][0];
+        buf[m++] = adw[j][1];
+        buf[m++] = adw[j][2];
+        buf[m++] = adw[j][3];
         buf[m++] = v[j][0];
         buf[m++] = v[j][1];
         buf[m++] = v[j][2];
@@ -386,7 +455,10 @@ int AtomVecAdress::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = ubuf(type[j]).d;
         buf[m++] = ubuf(mask[j]).d;
         buf[m++] = ubuf(res[j]).d;
-        buf[m++] = adw[j];
+        buf[m++] = adw[j][0];
+        buf[m++] = adw[j][1];
+        buf[m++] = adw[j][2];
+        buf[m++] = adw[j][3];
         if (mask[i] & deform_groupbit) {
           buf[m++] = v[j][0] + dvx;
           buf[m++] = v[j][1] + dvy;
@@ -417,7 +489,10 @@ int AtomVecAdress::pack_border_hybrid(int n, int *list, double *buf)
   for (i = 0; i < n; i++) {
     j = list[i];
     buf[m++] = ubuf(res[j]).d;
-    buf[m++] = adw[j];
+    buf[m++] = adw[j][0];
+    buf[m++] = adw[j][1];
+    buf[m++] = adw[j][2];
+    buf[m++] = adw[j][3];
   }
   return m;
 }
@@ -439,7 +514,10 @@ void AtomVecAdress::unpack_border(int n, int first, double *buf)
     type[i] = (int) ubuf(buf[m++]).i;
     mask[i] = (int) ubuf(buf[m++]).i;
     res[i] = (int) ubuf(buf[m++]).i;
-    adw[i] = buf[m++];
+    adw[i][0] = buf[m++];
+    adw[i][1] = buf[m++];
+    adw[i][2] = buf[m++];
+    adw[i][3] = buf[m++];
   }
 
   if (atom->nextra_border)
@@ -465,7 +543,10 @@ void AtomVecAdress::unpack_border_vel(int n, int first, double *buf)
     type[i] = (int) ubuf(buf[m++]).i;
     mask[i] = (int) ubuf(buf[m++]).i;
     res[i] = (int) ubuf(buf[m++]).i;
-    adw[i] = buf[m++];
+    adw[i][0] = buf[m++];
+    adw[i][1] = buf[m++];
+    adw[i][2] = buf[m++];
+    adw[i][3] = buf[m++];
     v[i][0] = buf[m++];
     v[i][1] = buf[m++];
     v[i][2] = buf[m++];
@@ -485,15 +566,19 @@ int AtomVecAdress::unpack_border_hybrid(int n, int first, double *buf)
 
   m = 0;
   last = first + n;
-  for (i = first; i < last; i++)
+  for (i = first; i < last; i++) {
     res[i] = (int) ubuf(buf[m++]).i;
-    adw[i] = buf[m++];
+    adw[i][0] = buf[m++];
+    adw[i][1] = buf[m++];
+    adw[i][2] = buf[m++];
+    adw[i][3] = buf[m++];
+  }
   return m;
 }
 
 /* ----------------------------------------------------------------------
-   pack data for atom I for sending to another proc
-   xyz must be 1st 3 values, so comm::exchange() can test on them
+   pack all atom quantities for shipping to another proc
+   xyz must be 1st 3 values, so that comm::exchange can test on them
 ------------------------------------------------------------------------- */
 
 int AtomVecAdress::pack_exchange(int i, double *buf)
@@ -511,7 +596,10 @@ int AtomVecAdress::pack_exchange(int i, double *buf)
   buf[m++] = ubuf(image[i]).d;
 
   buf[m++] = ubuf(res[i]).d;
-  buf[m++] = adw[i];
+  buf[m++] = adw[i][0];
+  buf[m++] = adw[i][1];
+  buf[m++] = adw[i][2];
+  buf[m++] = adw[i][3];
 
   if (atom->nextra_grow)
     for (int iextra = 0; iextra < atom->nextra_grow; iextra++)
@@ -541,7 +629,10 @@ int AtomVecAdress::unpack_exchange(double *buf)
   image[nlocal] = (imageint) ubuf(buf[m++]).i;
 
   res[nlocal] = (int) ubuf(buf[m++]).i;
-  adw[nlocal] = buf[m++];
+  adw[nlocal][0] = buf[m++];
+  adw[nlocal][1] = buf[m++];
+  adw[nlocal][2] = buf[m++];
+  adw[nlocal][3] = buf[m++];
 
   if (atom->nextra_grow)
     for (int iextra = 0; iextra < atom->nextra_grow; iextra++)
@@ -562,7 +653,7 @@ int AtomVecAdress::size_restart()
   int i;
 
   int nlocal = atom->nlocal;
-  int n = 12 * nlocal;
+  int n = 16 * nlocal;
 
   if (atom->nextra_restart)
     for (int iextra = 0; iextra < atom->nextra_restart; iextra++)
@@ -593,7 +684,10 @@ int AtomVecAdress::pack_restart(int i, double *buf)
   buf[m++] = v[i][2];
 
   buf[m++] = ubuf(res[i]).d;
-  buf[m++] = adw[i];
+  buf[m++] = adw[i][0];
+  buf[m++] = adw[i][1];
+  buf[m++] = adw[i][2];
+  buf[m++] = adw[i][3];
 
   if (atom->nextra_restart)
     for (int iextra = 0; iextra < atom->nextra_restart; iextra++)
@@ -629,7 +723,10 @@ int AtomVecAdress::unpack_restart(double *buf)
   v[nlocal][2] = buf[m++];
 
   res[nlocal] = (int) ubuf(buf[m++]).i;
-  adw[nlocal] = buf[m++];
+  adw[nlocal][0] = buf[m++];
+  adw[nlocal][1] = buf[m++];
+  adw[nlocal][2] = buf[m++];
+  adw[nlocal][3] = buf[m++];
 
   double **extra = atom->extra;
   if (atom->nextra_store) {
@@ -663,8 +760,11 @@ void AtomVecAdress::create_atom(int itype, double *coord)
   v[nlocal][1] = 0.0;
   v[nlocal][2] = 0.0;
 
-  res[nlocal] = 1;
-  adw[nlocal] = 1.0;
+  res[nlocal] = 0;
+  adw[nlocal][0] = 0.0;
+  adw[nlocal][1] = 0.0;
+  adw[nlocal][2] = 0.0;
+  adw[nlocal][3] = 0.0;
 
   atom->nlocal++;
 }
@@ -685,11 +785,17 @@ void AtomVecAdress::data_atom(double *coord, imageint imagetmp, char **values)
     error->one(FLERR,"Invalid atom type in Atoms section of data file");
 
   res[nlocal] = utils::inumeric(FLERR,values[2],true,lmp);
-  adw[nlocal] = utils::numeric(FLERR,values[3],true,lmp);
 
   x[nlocal][0] = coord[0];
   x[nlocal][1] = coord[1];
   x[nlocal][2] = coord[2];
+
+  adw[nlocal][0] = utils::numeric(FLERR,values[6],true,lmp);
+  adw[nlocal][1] = utils::numeric(FLERR,values[7],true,lmp);
+  adw[nlocal][2] = utils::numeric(FLERR,values[8],true,lmp);
+  adw[nlocal][3] = sqrt(adw[nlocal][0]*adw[nlocal][0] +
+                       adw[nlocal][1]*adw[nlocal][1] +
+                       adw[nlocal][2]*adw[nlocal][2]);
 
   image[nlocal] = imagetmp;
 
@@ -709,9 +815,13 @@ void AtomVecAdress::data_atom(double *coord, imageint imagetmp, char **values)
 int AtomVecAdress::data_atom_hybrid(int nlocal, char **values)
 {
   res[nlocal] = utils::inumeric(FLERR,values[0],true,lmp);
-  adw[nlocal] = utils::numeric(FLERR,values[1],true,lmp);
-
-  return 1;
+  adw[nlocal][0] = utils::numeric(FLERR,values[1],true,lmp);
+  adw[nlocal][1] = utils::numeric(FLERR,values[2],true,lmp);
+  adw[nlocal][2] = utils::numeric(FLERR,values[3],true,lmp);
+  adw[nlocal][3] = sqrt(adw[nlocal][0]*adw[nlocal][0] +
+                       adw[nlocal][1]*adw[nlocal][1] +
+                       adw[nlocal][2]*adw[nlocal][2]);
+  return 4;
 }
 
 /* ----------------------------------------------------------------------
@@ -725,13 +835,15 @@ void AtomVecAdress::pack_data(double **buf)
     buf[i][0] = ubuf(tag[i]).d;
     buf[i][1] = ubuf(type[i]).d;
     buf[i][2] = ubuf(res[i]).d;
-    buf[i][3] = adw[i];
-    buf[i][4] = x[i][0];
-    buf[i][5] = x[i][1];
-    buf[i][6] = x[i][2];
-    buf[i][7] = ubuf((image[i] & IMGMASK) - IMGMAX).d;
-    buf[i][8] = ubuf((image[i] >> IMGBITS & IMGMASK) - IMGMAX).d;
-    buf[i][9] = ubuf((image[i] >> IMG2BITS) - IMGMAX).d;
+    buf[i][3] = x[i][0];
+    buf[i][4] = x[i][1];
+    buf[i][5] = x[i][2];
+    buf[i][6] = adw[i][0];
+    buf[i][7] = adw[i][1];
+    buf[i][8] = adw[i][2];
+    buf[i][9] = ubuf((image[i] & IMGMASK) - IMGMAX).d;
+    buf[i][10] = ubuf((image[i] >> IMGBITS & IMGMASK) - IMGMAX).d;
+    buf[i][11] = ubuf((image[i] >> IMG2BITS) - IMGMAX).d;
   }
 }
 
@@ -742,8 +854,10 @@ void AtomVecAdress::pack_data(double **buf)
 int AtomVecAdress::pack_data_hybrid(int i, double *buf)
 {
   buf[0] = ubuf(res[i]).d;
-  buf[1] = adw[i];
-  return 1;
+  buf[1] = adw[i][0];
+  buf[2] = adw[i][1];
+  buf[3] = adw[i][2];
+  return 4;
 }
 
 /* ----------------------------------------------------------------------
@@ -753,11 +867,14 @@ int AtomVecAdress::pack_data_hybrid(int i, double *buf)
 void AtomVecAdress::write_data(FILE *fp, int n, double **buf)
 {
   for (int i = 0; i < n; i++)
-    fprintf(fp,TAGINT_FORMAT " %d %-1.16e %-1.16e %-1.16e %-1.16e %d %d %d\n",
+    fprintf(fp,TAGINT_FORMAT \
+            " %d %d %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e "
+            "%-1.16e %d %d %d\n",
             (tagint) ubuf(buf[i][0]).i,(int) ubuf(buf[i][1]).i,
-            buf[i][2],buf[i][3],buf[i][4],buf[i][5],
-            (int) ubuf(buf[i][6]).i,(int) ubuf(buf[i][7]).i,
-            (int) ubuf(buf[i][8]).i);
+            (int) ubuf(buf[i][2]).i,buf[i][3],buf[i][4],
+            buf[i][5],buf[i][6],buf[i][7],buf[i][8],
+            (int) ubuf(buf[i][9]).i,(int) ubuf(buf[i][10]).i,
+            (int) ubuf(buf[i][11]).i);
 }
 
 /* ----------------------------------------------------------------------
@@ -766,8 +883,8 @@ void AtomVecAdress::write_data(FILE *fp, int n, double **buf)
 
 int AtomVecAdress::write_data_hybrid(FILE *fp, double *buf)
 {
-  fprintf(fp," %-1.16e",buf[0]);
-  return 1;
+  fprintf(fp," %d %-1.16e %-1.16e %-1.16e",(int) ubuf(buf[0]).i,buf[1],buf[2],buf[3]);
+  return 4;
 }
 
 /* ----------------------------------------------------------------------
@@ -787,7 +904,7 @@ bigint AtomVecAdress::memory_usage()
   if (atom->memcheck("f")) bytes += memory->usage(f,nmax*comm->nthreads,3);
 
   if (atom->memcheck("res")) bytes += memory->usage(res,nmax);
-  if (atom->memcheck("adw")) bytes += memory->usage(adw,nmax);
+  if (atom->memcheck("adw")) bytes += memory->usage(adw,nmax,4);
 
   return bytes;
 }

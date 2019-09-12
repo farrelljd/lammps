@@ -192,6 +192,8 @@ Atom::Atom(LAMMPS *lmp) : Pointers(lmp)
   // USER-ADRESS
 
   adress_flag = 0;
+  res = NULL;
+  adw = NULL;
 
   // Peridynamic scale factor
 
@@ -348,6 +350,9 @@ Atom::~Atom()
   memory->destroy(improper_atom2);
   memory->destroy(improper_atom3);
   memory->destroy(improper_atom4);
+
+  memory->destroy(res);
+  memory->destroy(adw);
 
   // delete custom atom arrays
 
@@ -2292,6 +2297,9 @@ void *Atom::extract(char *name)
 
   if (strcmp(name,"dpdTheta") == 0) return (void *) dpdTheta;
   if (strcmp(name,"edpd_temp") == 0) return (void *) edpd_temp;
+
+  if (strcmp(name,"res") == 0) return (void *) res;
+  if (strcmp(name,"adw") == 0) return (void *) adw;
 
   return NULL;
 }
