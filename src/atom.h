@@ -74,7 +74,7 @@ class Atom : protected Pointers {
   // USER-ADRESS package
 
   int *res;
-  double *adw;
+  double **adw;
 
   // PERI package
 
