@@ -36,12 +36,16 @@ using namespace FixConst;
 FixAdress::FixAdress(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg)
 {
-  if (narg != 4) error->all(FLERR,"Illegal fix adress command");
   comm_reverse = 3;
 
   // parse args
 
+  if (narg != 6) error->all(FLERR,"Illegal fix adress command");
+
   bondtype = force->inumeric(FLERR,arg[3]);
+  dex = force->numeric(FLERR,arg[4]);
+  dhy = force->numeric(FLERR,arg[5]);
+  dsum = dex + dhy;
 
 }
 
@@ -129,6 +133,7 @@ void FixAdress::post_integrate()
       adw[i][2] = x[i][2];
     }
   }
+  adress_weight();
   // accumulate centres-of-mass for atomistic particles
   for (n = 0; n < nbondlist; n++) {
     if (bondlist[n][2] != bondtype) continue;

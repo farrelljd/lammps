@@ -13,8 +13,6 @@
 
 #ifdef FIX_CLASS
 
-FixStyle(adress,FixAdress)
-
 #else
 
 #ifndef LMP_FIX_WALL_ADRESS_H
@@ -26,13 +24,17 @@ namespace LAMMPS_NS {
 
 class FixAdress : public Fix {
  public:
+  int bondtype;
+  double dex, dhy, dsum;
+
   FixAdress(class LAMMPS *, int, char **);
   virtual ~FixAdress();
   int setmask();
   void post_integrate();
-  int bondtype;
   int pack_reverse_comm(int, int, double *);
   void unpack_reverse_comm(int, int *, double *);
+
+  virtual void adress_weight() = 0;
 };
 
 }
