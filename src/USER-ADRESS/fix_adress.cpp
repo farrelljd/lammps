@@ -124,6 +124,7 @@ void FixAdress::post_integrate()
     adw[i][0] = 0.0;
     adw[i][1] = 0.0;
     adw[i][2] = 0.0;
+    adw[i][3] = 0.0;
   }
   // copy positions to centres-of-mass for coarse-grained sites
   for (i = 0; i < nlocal; i++) {
@@ -143,11 +144,13 @@ void FixAdress::post_integrate()
       adw[i2][0] += adw[i1][0];
       adw[i2][1] += adw[i1][1];
       adw[i2][2] += adw[i1][2];
+      adw[i2][3] += adw[i1][3];
     }
     else if ((res[i2]==0)){
       adw[i1][0] += adw[i2][0];
       adw[i1][1] += adw[i2][1];
       adw[i1][2] += adw[i2][2];
+      adw[i1][3] += adw[i2][3];
     }
   }
   comm->reverse_comm_fix(this);
