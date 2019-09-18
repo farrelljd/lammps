@@ -31,6 +31,8 @@ class FixAdress : public Fix {
   int setmask();
   void post_integrate();
   int bondtype;
+  int pack_reverse_comm(int, int, double *);
+  void unpack_reverse_comm(int, int *, double *);
 };
 
 }
