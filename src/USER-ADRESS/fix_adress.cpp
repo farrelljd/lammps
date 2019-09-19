@@ -69,23 +69,13 @@ int FixAdress::setmask()
 
 void FixAdress::post_integrate()
 {
-  int i,i1,i2,n,type;
-  double delx,dely,delz;
-  double rsq,r,dr,rk;
-
-  double **x = atom->x;
-  double **f = atom->f;
-  int *res = atom->res;
-  double **adw = atom->adw;
-  double *mass = atom->mass;
-  double m1, m2;
-  int **bondlist = neighbor->bondlist;
-  int nbondlist = neighbor->nbondlist;
-  int nlocal = atom->nlocal;
-  int nghost = atom->nghost;
-  int newton_bond = force->newton_bond;
-
   // clear positions of coarse-grained sites
+
+  int *res = atom->res;
+  double **x = atom->x;
+  int nlocal = atom->nlocal;
+  int i;
+
   for (i = 0; i < nlocal; i++) {
     if (res[i] == 0) {
       x[i][0] = 0.0;
@@ -93,8 +83,16 @@ void FixAdress::post_integrate()
       x[i][2] = 0.0;
     }
   }
+
   // accumulate positions of coarse-grained sites from directly bonded
   // atomistic sites
+
+  double *mass = atom->mass;
+  double m1, m2;
+  int **bondlist = neighbor->bondlist;
+  int nbondlist = neighbor->nbondlist;
+  int i1, i2, n;
+
   for (n = 0; n < nbondlist; n++) {
     if (bondlist[n][2] != bondtype) continue;
     i1 = bondlist[n][0];
@@ -119,7 +117,12 @@ void FixAdress::post_integrate()
       x[i2][2] += x[i1][2]*m1/m2;
     }
   }
+
   // clear centres-of-mass of all sites
+
+  double **adw = atom->adw;
+  int nghost = atom->nghost;
+
   for (i = 0; i < nlocal+nghost; i++) {
     adw[i][0] = 0.0;
     adw[i][1] = 0.0;
@@ -134,8 +137,9 @@ void FixAdress::post_integrate()
       adw[i][2] = x[i][2];
     }
   }
+  // calculate adress weights---style specific
   adress_weight();
-  // accumulate centres-of-mass for atomistic particles
+  // accumulate centres-of-mass and weights for atomistic particles
   for (n = 0; n < nbondlist; n++) {
     if (bondlist[n][2] != bondtype) continue;
     i1 = bondlist[n][0];
