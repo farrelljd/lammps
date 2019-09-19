@@ -24,7 +24,7 @@ namespace LAMMPS_NS {
 
 class FixAdress : public Fix {
  public:
-  int bondtype;
+  int atomisticbit, coarsebit, allbit, commbit, bondtype;
   double dex, dhy, dsum;
 
   FixAdress(class LAMMPS *, int, char **);

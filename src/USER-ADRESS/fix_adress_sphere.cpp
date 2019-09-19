@@ -46,6 +46,7 @@ FixAdressSphere::FixAdressSphere(LAMMPS *lmp, int narg, char **arg) :
 
 void FixAdressSphere::adress_weight()
 {
+  int *mask = atom->mask;
   double **x = atom->x;
   int *res = atom->res;
   double **adw = atom->adw;
@@ -57,7 +58,7 @@ void FixAdressSphere::adress_weight()
   int nlocal = atom->nlocal;
 
   for (i = 0; i < nlocal; i++) {
-    if (res[i] == 0) {
+    if (mask[i] & coarsebit) {
       cx = c0x - x[i][0];
       cy = c0y - x[i][1];
       cz = c0z - x[i][2];
