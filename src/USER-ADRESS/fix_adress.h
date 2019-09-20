@@ -31,6 +31,7 @@ class FixAdress : public Fix {
   virtual ~FixAdress();
   int setmask();
   void post_integrate();
+  void pre_force(int);
   int pack_reverse_comm(int, int, double *);
   void unpack_reverse_comm(int, int *, double *);
 

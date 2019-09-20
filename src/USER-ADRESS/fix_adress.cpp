@@ -12,22 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_adress.h"
-#include <cstring>
 #include "atom.h"
 #include "comm.h"
-#include "update.h"
-#include "modify.h"
-#include "domain.h"
-#include "lattice.h"
-#include "input.h"
 #include "variable.h"
 #include "error.h"
 #include "force.h"
 #include "neighbor.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
-#include "memory.h"
 #include "group.h"
+#include "domain.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -73,6 +66,7 @@ int FixAdress::setmask()
 {
   int mask = 0;
   mask |= POST_INTEGRATE;
+  mask |= PRE_FORCE;
   return mask;
 }
 
@@ -80,16 +74,36 @@ int FixAdress::setmask()
 
 void FixAdress::post_integrate()
 {
+  // clear centres-of-mass of all sites
+
+  int *mask = atom->mask;
+  double **adw = atom->adw;
+  int nlocal = atom->nlocal;
+  int nghost = atom->nghost;
+  int i;
+  double dx = domain->xprd;
+  double dy = domain->yprd;
+  double dz = domain->zprd;
+  int newton_bond = force->newton_bond;
+
+  for (i = 0; i < nlocal+nghost; i++) {
+    if (mask[i] & allbit) {
+      adw[i][0] = 0.0;
+      adw[i][1] = 0.0;
+      adw[i][2] = 0.0;
+      adw[i][3] = 0.0;
+    }
+  }
+
   // clear positions of coarse-grained sites
 
-  int *res = atom->res;
-  int *mask = atom->mask;
   double **x = atom->x;
-  int nlocal = atom->nlocal;
-  int i;
 
-  for (i = 0; i < nlocal; i++) {
+  for (i = 0; i < nlocal+nghost; i++) {
     if (mask[i] & coarsebit) {
+      adw[i][0] = dx*floor(x[i][0]/dx);
+      adw[i][1] = dy*floor(x[i][1]/dy);
+      adw[i][2] = dz*floor(x[i][2]/dz);
       x[i][0] = 0.0;
       x[i][1] = 0.0;
       x[i][2] = 0.0;
@@ -121,32 +135,20 @@ void FixAdress::post_integrate()
 
     // coarse-grained site must be local
 
-    if (g1 & coarsebit) {
-      if (i1 > nlocal) error->all(FLERR,"low resolution atom is a ghost!");
-      x[i1][0] += x[i2][0]*m2/m1;
-      x[i1][1] += x[i2][1]*m2/m1;
-      x[i1][2] += x[i2][2]*m2/m1;
+    if ((g1 & coarsebit) && (newton_bond || i1 < nlocal)) {
+      x[i1][0] += (x[i2][0]-adw[i1][0])*m2/m1;
+      x[i1][1] += (x[i2][1]-adw[i1][1])*m2/m1;
+      x[i1][2] += (x[i2][2]-adw[i1][2])*m2/m1;
     }
-    else if (g2 & coarsebit) {
-      if (i2 > nlocal) error->all(FLERR,"low resolution atom is a ghost!");
-      x[i2][0] += x[i1][0]*m1/m2;
-      x[i2][1] += x[i1][1]*m1/m2;
-      x[i2][2] += x[i1][2]*m1/m2;
+    else if ((g2 & coarsebit) && (newton_bond || i2 < nlocal)) {
+      x[i2][0] += (x[i1][0]-adw[i2][0])*m1/m2;
+      x[i2][1] += (x[i1][1]-adw[i2][1])*m1/m2;
+      x[i2][2] += (x[i1][2]-adw[i2][2])*m1/m2;
     }
   }
-
-  // clear centres-of-mass of all sites
-
-  double **adw = atom->adw;
-  int nghost = atom->nghost;
-
-  for (i = 0; i < nlocal+nghost; i++) {
-    if (mask[i] & allbit) {
-      adw[i][0] = 0.0;
-      adw[i][1] = 0.0;
-      adw[i][2] = 0.0;
-      adw[i][3] = 0.0;
-    }
+  if (newton_bond) {
+    commbit = coarsebit;
+    comm->reverse_comm_fix(this);
   }
 
   // copy positions to centres-of-mass for coarse-grained sites
@@ -163,7 +165,20 @@ void FixAdress::post_integrate()
 
   adress_weight();
 
-  // accumulate centres-of-mass and weights for atomistic particles
+  return;
+}
+/* ---------------------------------------------------------------------- */
+
+void FixAdress::pre_force(int /*vflag*/)
+{
+  int *mask = atom->mask;
+  double **adw = atom->adw;
+  int nlocal = atom->nlocal;
+  int newton_bond = force->newton_bond;
+  int g1, g2;
+  int **bondlist = neighbor->bondlist;
+  int nbondlist = neighbor->nbondlist;
+  int i1, i2, n;
 
   for (n = 0; n < nbondlist; n++) {
     if (bondlist[n][2] != bondtype) continue;
@@ -171,21 +186,24 @@ void FixAdress::post_integrate()
     i2 = bondlist[n][1];
     g1 = mask[i1];
     g2 = mask[i2];
-    if (g1 & coarsebit) {
+    if ((g1 & coarsebit) && (newton_bond || i2 < nlocal)) {
       adw[i2][0] += adw[i1][0];
       adw[i2][1] += adw[i1][1];
       adw[i2][2] += adw[i1][2];
       adw[i2][3] += adw[i1][3];
     }
-    else if (g2 & coarsebit) {
+    if ((g2 & coarsebit) && (newton_bond || i1 < nlocal)) {
       adw[i1][0] += adw[i2][0];
       adw[i1][1] += adw[i2][1];
       adw[i1][2] += adw[i2][2];
       adw[i1][3] += adw[i2][3];
     }
   }
-  commbit = atomisticbit;
-  comm->reverse_comm_fix(this);
+
+  if (newton_bond) {
+    commbit = atomisticbit;
+    comm->reverse_comm_fix(this);
+  }
 
   return;
 }
@@ -195,16 +213,22 @@ void FixAdress::post_integrate()
 int FixAdress::pack_reverse_comm(int n, int first, double *buf)
 {
   int i,m,last;
-  double **adw = atom->adw;
   int *mask = atom->mask;
+  double **arr = NULL;
+
+  if (commbit == atomisticbit) {
+    arr = atom->adw;
+  } else if (commbit == coarsebit) {
+    arr = atom->x;
+  }
 
   m = 0;
   last = first + n;
   for (i = first; i < last; i++) {
     if (mask[i] & commbit) {
-      buf[m++] = adw[i][0];
-      buf[m++] = adw[i][1];
-      buf[m++] = adw[i][2];
+      buf[m++] = arr[i][0];
+      buf[m++] = arr[i][1];
+      buf[m++] = arr[i][2];
     }
   }
   return m;
@@ -215,16 +239,22 @@ int FixAdress::pack_reverse_comm(int n, int first, double *buf)
 void FixAdress::unpack_reverse_comm(int n, int *list, double *buf)
 {
   int i,j,m;
-  double **adw = atom->adw;
   int *mask = atom->mask;
+  double **arr = NULL;
+
+  if (commbit == atomisticbit) {
+    arr = atom->adw;
+  } else if (commbit == coarsebit) {
+    arr = atom->x;
+  }
 
   m = 0;
   for (i = 0; i < n; i++) {
     j = list[i];
     if (mask[j] & commbit) {
-      adw[j][0] += buf[m++];
-      adw[j][1] += buf[m++];
-      adw[j][2] += buf[m++];
+      arr[j][0] += buf[m++];
+      arr[j][1] += buf[m++];
+      arr[j][2] += buf[m++];
     }
   }
 }
