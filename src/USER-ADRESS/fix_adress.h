@@ -24,7 +24,7 @@ namespace LAMMPS_NS {
 
 class FixAdress : public Fix {
  public:
-  int atomisticbit, coarsebit, allbit, commbit, bondtype;
+  int atomisticbit, coarsebit, allbit, bondtype;
   double dex, dhy, dsum;
 
   FixAdress(class LAMMPS *, int, char **);
@@ -32,6 +32,8 @@ class FixAdress : public Fix {
   int setmask();
   void post_integrate();
   void pre_force(int);
+  int pack_forward_comm(int, int*, double *, int, int*);
+  void unpack_forward_comm(int, int, double *);
   int pack_reverse_comm(int, int, double *);
   void unpack_reverse_comm(int, int *, double *);
 
