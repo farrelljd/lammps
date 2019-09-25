@@ -31,7 +31,7 @@ FixAdress::FixAdress(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg)
 {
   comm_forward = 3;
-  comm_reverse = 3;
+  comm_reverse = 4;
 
   // parse args
 
@@ -124,7 +124,6 @@ void FixAdress::post_integrate()
     m2 = mass[atom->type[i2]];
 
     if (newton_bond || i1 < nlocal) {
-      if (i1 > nlocal) error->all(FLERR,"i2 > nlocal"); 
       x[i1][0] += x[i2][0]*m2/m1;
       x[i1][1] += x[i2][1]*m2/m1;
       x[i1][2] += x[i2][2]*m2/m1;
@@ -331,6 +330,7 @@ int FixAdress::pack_reverse_comm(int n, int first, double *buf)
       buf[m++] = adw[i][0];
       buf[m++] = adw[i][1];
       buf[m++] = adw[i][2];
+      buf[m++] = adw[i][3];
     }
   }
 
@@ -352,6 +352,7 @@ void FixAdress::unpack_reverse_comm(int n, int *list, double *buf)
       adw[j][0] += buf[m++];
       adw[j][1] += buf[m++];
       adw[j][2] += buf[m++];
+      adw[j][3] += buf[m++];
     }
   }
 }
