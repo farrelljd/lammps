@@ -64,7 +64,7 @@ void FixAdressSphere::adress_weight()
       cz = c0z - x[i][2];
       cd = sqrt(cx*cx + cy*cy + cz*cz);
       if (cd > dsum) {
-        adw[i][3] = 1.0;
+        adw[i][3] = 0.0;
       } else if (cd < dex) {
         adw[i][3] = 1.0;
       } else {
