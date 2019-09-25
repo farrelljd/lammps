@@ -76,6 +76,8 @@ void FixAdress::post_integrate()
 {
   // get updated coordinates for atomistic ghosts
 
+  commflag = POST_INTEGRATE;
+  comm_forward = 3;
   comm->forward_comm_fix(this);
 
   // clear centres-of-mass of all sites and
@@ -143,6 +145,9 @@ void FixAdress::post_integrate()
 
   adress_weight();
 
+  // the forward comm step in the verlet routine takes care of broadcasting
+  // the new virtual-site coordinates to the ghosts
+
   return;
 }
 
@@ -184,6 +189,13 @@ void FixAdress::pre_force(int /*vflag*/)
     comm->reverse_comm_fix(this);
   }
 
+  // at this stage, adress weights are known by local atoms; we now need to
+  // forward this data to their ghosts
+  
+  commflag = PRE_FORCE;
+  comm_forward = 4;
+  comm->forward_comm_fix(this);
+
   return;
 }
 
@@ -195,36 +207,63 @@ int FixAdress::pack_forward_comm(int n, int *list, double *buf,
   int i,j,m;
   double dx,dy,dz;
   int *mask = atom->mask;
-  double **x = atom->x;
-
   m = 0;
-  if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      if (mask[j] & atomisticbit) {
-        buf[m++] = x[j][0];
-        buf[m++] = x[j][1];
-        buf[m++] = x[j][2];
+
+  switch (commflag) {
+    case POST_INTEGRATE: {
+  
+      double **x = atom->x;
+
+      if (pbc_flag == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          if (mask[j] & atomisticbit) {
+            buf[m++] = x[j][0];
+            buf[m++] = x[j][1];
+            buf[m++] = x[j][2];
+          }
+        }
+      } else {
+        if (domain->triclinic == 0) {
+          dx = pbc[0]*domain->xprd;
+          dy = pbc[1]*domain->yprd;
+          dz = pbc[2]*domain->zprd;
+        } else {
+          dx = pbc[0]*domain->xprd + pbc[5]*domain->xy + pbc[4]*domain->xz;
+          dy = pbc[1]*domain->yprd + pbc[3]*domain->yz;
+          dz = pbc[2]*domain->zprd;
+        }
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          if (mask[j] & atomisticbit) {
+            buf[m++] = x[j][0] + dx;
+            buf[m++] = x[j][1] + dy;
+            buf[m++] = x[j][2] + dz;
+          }
+        }
       }
+      break;
     }
-  } else {
-    if (domain->triclinic == 0) {
-      dx = pbc[0]*domain->xprd;
-      dy = pbc[1]*domain->yprd;
-      dz = pbc[2]*domain->zprd;
-    } else {
-      dx = pbc[0]*domain->xprd + pbc[5]*domain->xy + pbc[4]*domain->xz;
-      dy = pbc[1]*domain->yprd + pbc[3]*domain->yz;
-      dz = pbc[2]*domain->zprd;
-    }
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      if (mask[j] & atomisticbit) {
-        buf[m++] = x[j][0] + dx;
-        buf[m++] = x[j][1] + dy;
-        buf[m++] = x[j][2] + dz;
+
+    case PRE_FORCE: {
+
+      double **adw = atom->adw;
+
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        if (mask[j] & atomisticbit) {
+          buf[m++] = adw[j][0];
+          buf[m++] = adw[j][1];
+          buf[m++] = adw[j][2];
+          buf[m++] = adw[j][3];
+        }
       }
+      break;
     }
+
+    default:
+      error->all(FLERR,"what are you trying to communicate?");
+      break;
   }
 
   return m;
@@ -236,16 +275,44 @@ void FixAdress::unpack_forward_comm(int n, int first, double *buf)
 {
   int i,m,last;
   int *mask = atom->mask;
-  double **x = atom->x;
 
   m = 0;
   last = first + n;
-  for (i = first; i < last; i++) {
-    if (mask[i] & atomisticbit) {
-      x[i][0] = buf[m++];
-      x[i][1] = buf[m++];
-      x[i][2] = buf[m++];
+
+  switch (commflag)
+  {
+    case POST_INTEGRATE: {
+
+      double **x = atom->x;
+
+      for (i = first; i < last; i++) {
+        if (mask[i] & atomisticbit) {
+          x[i][0] = buf[m++];
+          x[i][1] = buf[m++];
+          x[i][2] = buf[m++];
+        }
+      }
+      break;
     }
+
+    case PRE_FORCE: {
+
+      double **adw = atom->adw;
+
+      for (i = first; i < last; i++) {
+        if (mask[i] & atomisticbit) {
+          adw[i][0] = buf[m++];
+          adw[i][1] = buf[m++];
+          adw[i][2] = buf[m++];
+          adw[i][3] = buf[m++];
+        }
+      }
+      break;
+    }
+
+    default:
+      error->all(FLERR,"what are you trying to communicate?");
+      break;
   }
 }
 
