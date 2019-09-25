@@ -33,7 +33,7 @@ AtomVecAdress::AtomVecAdress(LAMMPS *lmp) : AtomVec(lmp)
 
   comm_x_only = 0;
   comm_f_only = 1;
-  size_forward = 6;
+  size_forward = 7;
   size_reverse = 3;
   size_border = 11;
   size_velocity = 3;
@@ -132,6 +132,7 @@ int AtomVecAdress::pack_comm(int n, int *list, double *buf,
       buf[m++] = adw[j][0];
       buf[m++] = adw[j][1];
       buf[m++] = adw[j][2];
+      buf[m++] = adw[j][3];
     }
   } else {
     if (domain->triclinic == 0) {
@@ -151,6 +152,7 @@ int AtomVecAdress::pack_comm(int n, int *list, double *buf,
       buf[m++] = adw[j][0];
       buf[m++] = adw[j][1];
       buf[m++] = adw[j][2];
+      buf[m++] = adw[j][3];
     }
   }
   return m;
@@ -174,6 +176,7 @@ int AtomVecAdress::pack_comm_vel(int n, int *list, double *buf,
       buf[m++] = adw[j][0];
       buf[m++] = adw[j][1];
       buf[m++] = adw[j][2];
+      buf[m++] = adw[j][3];
       buf[m++] = v[j][0];
       buf[m++] = v[j][1];
       buf[m++] = v[j][2];
@@ -197,6 +200,7 @@ int AtomVecAdress::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = adw[j][0];
         buf[m++] = adw[j][1];
         buf[m++] = adw[j][2];
+        buf[m++] = adw[j][3];
         buf[m++] = v[j][0];
         buf[m++] = v[j][1];
         buf[m++] = v[j][2];
@@ -213,6 +217,7 @@ int AtomVecAdress::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = adw[j][0];
         buf[m++] = adw[j][1];
         buf[m++] = adw[j][2];
+        buf[m++] = adw[j][3];
         if (mask[i] & deform_groupbit) {
           buf[m++] = v[j][0] + dvx;
           buf[m++] = v[j][1] + dvy;
@@ -240,6 +245,7 @@ int AtomVecAdress::pack_comm_hybrid(int n, int *list, double *buf)
     buf[m++] = adw[j][0];
     buf[m++] = adw[j][1];
     buf[m++] = adw[j][2];
+    buf[m++] = adw[j][3];
   }
   return m;
 }
@@ -259,6 +265,7 @@ void AtomVecAdress::unpack_comm(int n, int first, double *buf)
     adw[i][0] = buf[m++];
     adw[i][1] = buf[m++];
     adw[i][2] = buf[m++];
+    adw[i][3] = buf[m++];
   }
 }
 
@@ -277,6 +284,7 @@ void AtomVecAdress::unpack_comm_vel(int n, int first, double *buf)
     adw[i][0] = buf[m++];
     adw[i][1] = buf[m++];
     adw[i][2] = buf[m++];
+    adw[i][3] = buf[m++];
     v[i][0] = buf[m++];
     v[i][1] = buf[m++];
     v[i][2] = buf[m++];
@@ -295,6 +303,7 @@ int AtomVecAdress::unpack_comm_hybrid(int n, int first, double *buf)
     adw[i][0] = buf[m++];
     adw[i][1] = buf[m++];
     adw[i][2] = buf[m++];
+    adw[i][3] = buf[m++];
   }
   return m;
 }
