@@ -30,9 +30,6 @@ using namespace FixConst;
 FixAdress::FixAdress(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg)
 {
-  comm_forward = 3;
-  comm_reverse = 4;
-
   // parse args
 
   if (narg != 8) error->all(FLERR,"Illegal fix adress command");
@@ -67,6 +64,7 @@ int FixAdress::setmask()
   int mask = 0;
   mask |= POST_INTEGRATE;
   mask |= PRE_FORCE;
+  mask |= PRE_REVERSE;
   return mask;
 }
 
@@ -78,6 +76,7 @@ void FixAdress::post_integrate()
 
   commflag = POST_INTEGRATE;
   comm_forward = 3;
+
   comm->forward_comm_fix(this);
 
   // clear centres-of-mass of all sites and
@@ -154,6 +153,10 @@ void FixAdress::post_integrate()
 
 void FixAdress::pre_force(int /*vflag*/)
 {
+  commflag = PRE_FORCE;
+  comm_forward = 4;
+  comm_reverse = 4;
+
   // copy adress centres-of-mass and weights from coarse-grained to
   // atomistic sites
 
@@ -191,9 +194,67 @@ void FixAdress::pre_force(int /*vflag*/)
   // at this stage, adress weights are known by local atoms; we now need to
   // forward this data to their ghosts
   
-  commflag = PRE_FORCE;
-  comm_forward = 4;
   comm->forward_comm_fix(this);
+
+  return;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixAdress::pre_reverse(int /*eflag*/, int /*vflag*/)
+{
+
+  commflag = PRE_REVERSE;
+  comm_forward = 3;
+  comm_reverse = 3;
+
+  // collect force contributions from ghosts
+
+  if (force->newton) {
+    comm->reverse_comm_fix(this);
+  }
+
+  // if not newton bond, we need to push the forces from the locals on to
+  // the ghosts
+
+  int newton_bond = force->newton_bond;
+
+  if (!newton_bond) {
+    comm->forward_comm_fix(this);
+  }
+
+  int *mask = atom->mask;
+  double **adw = atom->adw;
+  double **f = atom->f;
+  int nlocal = atom->nlocal;
+  int nghost = atom->nghost;
+  int i;
+  double *mass = atom->mass;
+  double m1, m2;
+  int g1, g2;
+  int **bondlist = neighbor->bondlist;
+  int nbondlist = neighbor->nbondlist;
+  int i1, i2, n;
+
+  for (n = 0; n < nbondlist; n++) {
+    if (bondlist[n][2] != bondtype) continue;
+    i1 = bondlist[n][0];
+    i2 = bondlist[n][1];
+    g1 = mask[i1];
+    g2 = mask[i2];
+    if (g2 & coarsebit) {
+      std::swap(i1,i2);
+      std::swap(g1,g2);
+    }
+    m1 = mass[atom->type[i1]]; // cg
+    m2 = mass[atom->type[i2]]; // at
+
+    if (newton_bond || i2 < nlocal) {
+      f[i2][0] += f[i1][0]*m2/m1;
+      f[i2][1] += f[i1][1]*m2/m1;
+      f[i2][2] += f[i1][2]*m2/m1;
+    }
+  }
 
   return;
 }
@@ -260,6 +321,21 @@ int FixAdress::pack_forward_comm(int n, int *list, double *buf,
       break;
     }
 
+    case PRE_REVERSE: {
+
+      double **f = atom->f;
+
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        if (mask[j] & coarsebit) {
+          buf[m++] = f[j][0];
+          buf[m++] = f[j][1];
+          buf[m++] = f[j][2];
+        }
+      }
+      break;
+    }
+
     default:
       error->all(FLERR,"what are you trying to communicate?");
       break;
@@ -309,6 +385,20 @@ void FixAdress::unpack_forward_comm(int n, int first, double *buf)
       break;
     }
 
+    case PRE_REVERSE: {
+
+      double **f = atom->f;
+
+      for (i = first; i < last; i++) {
+        if (mask[i] & coarsebit) {
+          f[i][0] = buf[m++];
+          f[i][1] = buf[m++];
+          f[i][2] = buf[m++];
+        }
+      }
+      break;
+    }
+
     default:
       error->all(FLERR,"what are you trying to communicate?");
       break;
@@ -321,16 +411,43 @@ int FixAdress::pack_reverse_comm(int n, int first, double *buf)
 {
   int i,m,last;
   int *mask = atom->mask;
-  double **adw = atom->adw;
 
   m = 0;
   last = first + n;
-  for (i = first; i < last; i++) {
-    if (mask[i] & atomisticbit) {
-      buf[m++] = adw[i][0];
-      buf[m++] = adw[i][1];
-      buf[m++] = adw[i][2];
-      buf[m++] = adw[i][3];
+
+  switch (commflag) {
+    case PRE_FORCE: {
+      
+      double **adw = atom->adw;
+
+      for (i = first; i < last; i++) {
+        if (mask[i] & atomisticbit) {
+          buf[m++] = adw[i][0];
+          buf[m++] = adw[i][1];
+          buf[m++] = adw[i][2];
+          buf[m++] = adw[i][3];
+        }
+      }
+      break;
+    }
+
+    case PRE_REVERSE: {
+
+      double **f = atom->f;
+
+      for (i = first; i < last; i++) {
+        if (mask[i] & coarsebit) {
+          buf[m++] = f[i][0];
+          buf[m++] = f[i][1];
+          buf[m++] = f[i][2];
+        }
+      }
+      break;
+    }
+
+    default: {
+      error->all(FLERR,"what are you trying to communicate?");
+      break;
     }
   }
 
@@ -346,13 +463,40 @@ void FixAdress::unpack_reverse_comm(int n, int *list, double *buf)
   double **adw = atom->adw;
 
   m = 0;
-  for (i = 0; i < n; i++) {
-    j = list[i];
-    if (mask[j] & atomisticbit) {
-      adw[j][0] += buf[m++];
-      adw[j][1] += buf[m++];
-      adw[j][2] += buf[m++];
-      adw[j][3] += buf[m++];
+  switch (commflag) {
+    case PRE_FORCE: {
+      
+      double **adw = atom->adw;
+
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        if (mask[j] & atomisticbit) {
+          adw[j][0] += buf[m++];
+          adw[j][1] += buf[m++];
+          adw[j][2] += buf[m++];
+          adw[j][3] += buf[m++];
+        }
+      }
+      break;
+    }
+
+    case PRE_REVERSE: {
+      double **f = atom->f;
+
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        if (mask[j] & coarsebit) {
+          f[j][0] += buf[m++];
+          f[j][1] += buf[m++];
+          f[j][2] += buf[m++];
+        }
+      }
+      break;
+    }
+
+    default: {
+      error->all(FLERR,"what are you trying to communicate?");
+      break;
     }
   }
 }

@@ -32,6 +32,7 @@ class FixAdress : public Fix {
   int setmask();
   void post_integrate();
   void pre_force(int);
+  void pre_reverse(int,int);
   int pack_forward_comm(int, int*, double *, int, int*);
   void unpack_forward_comm(int, int, double *);
   int pack_reverse_comm(int, int, double *);
