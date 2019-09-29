@@ -30,6 +30,8 @@ using namespace FixConst;
 FixAdress::FixAdress(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg)
 {
+  scalar_flag = 1;
+
   // parse args
 
   if (narg != 8) error->all(FLERR,"Illegal fix adress command");
@@ -501,3 +503,21 @@ void FixAdress::unpack_reverse_comm(int n, int *list, double *buf)
   }
 }
 
+/* ---------------------------------------------------------------------- */
+
+double FixAdress::compute_scalar()
+{
+  double **adw = atom->adw;
+  int sum_local, sum_global;
+  int *mask = atom->mask;
+
+  sum_local = 0;
+
+  for (int i = 0; i < atom->nlocal; i++) {
+    if (mask[i] & coarsebit && adw[i][3] == 1.0) sum_local++;
+  }
+
+  MPI_Reduce(&sum_local, &sum_global, 1, MPI_INT, MPI_SUM, 0, world);
+
+  return sum_global;
+}
