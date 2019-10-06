@@ -28,7 +28,6 @@ using namespace LAMMPS_NS;
 PairLJCutAdress::PairLJCutAdress(LAMMPS *lmp) : PairLJCut(lmp)
 {
   respa_enable = 0;
-  error->all(FLERR,"pair/lj/cut adress is not ready yet :-("); 
 }
 
 /* ---------------------------------------------------------------------- */
@@ -48,7 +47,7 @@ void PairLJCutAdress::compute(int eflag, int vflag)
   int *type = atom->type;
   int *res = atom->res;
   double **adw = atom->adw;
-  double wi, wj;
+  double wi, wj, wij;
   int nlocal = atom->nlocal;
   double *special_lj = force->special_lj;
   int newton_pair = force->newton_pair;
@@ -62,12 +61,14 @@ void PairLJCutAdress::compute(int eflag, int vflag)
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
+
+    wi = adw[i][3];
+    if (res[i] == 1 & wi == 0.0) continue;
+
     xtmp = x[i][0];
     ytmp = x[i][1];
     ztmp = x[i][2];
     itype = type[i];
-    wi = adw[i][3];
-    if (wi == 0.0) continue;
     jlist = firstneigh[i];
     jnum = numneigh[i];
 
@@ -76,20 +77,23 @@ void PairLJCutAdress::compute(int eflag, int vflag)
       factor_lj = special_lj[sbmask(j)];
       j &= NEIGHMASK;
 
+      wj = adw[j][3];
+      wij = wi*wj;
+      wij = 1-res[i] + (2*res[i]-1)*wij;
+      if (wij == 0.0) continue;
+
       delx = xtmp - x[j][0];
       dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
       rsq = delx*delx + dely*dely + delz*delz;
       jtype = type[j];
-      wj = adw[j][3];
-      if (wj == 0.0) continue;
 
       if (rsq < cutsq[itype][jtype]) {
         r2inv = 1.0/rsq;
         r6inv = r2inv*r2inv*r2inv;
         forcelj = r6inv * (lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
         fpair = factor_lj*forcelj*r2inv;
-        fpair *= wi*wj;
+        fpair *= wij;
 
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
